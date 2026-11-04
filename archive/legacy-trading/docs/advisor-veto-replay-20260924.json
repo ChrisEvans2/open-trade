@@ -1,0 +1,132 @@
+{
+  "publication": "原始事件和绩效属于私有交易历史，仅公开字段结构；未提供样本或绩效。",
+  "private_data_included": false,
+  "schema": {
+    "start": "str",
+    "end": "str",
+    "sample_count": "int",
+    "summary": {
+      "all": {
+        "4": {
+          "valid": "int",
+          "excluded": "int",
+          "positive": "int",
+          "negative": "int",
+          "mean_return_pct": "float",
+          "median_return_pct": "float",
+          "mean_mfe_pct": "float",
+          "mean_mae_pct": "float",
+          "first_touch_counts": {
+            "take_first": "int",
+            "neither": "int"
+          }
+        },
+        "12": {
+          "valid": "int",
+          "excluded": "int",
+          "positive": "int",
+          "negative": "int",
+          "mean_return_pct": "float",
+          "median_return_pct": "float",
+          "mean_mfe_pct": "float",
+          "mean_mae_pct": "float",
+          "first_touch_counts": {
+            "take_first": "int",
+            "neither": "int"
+          }
+        },
+        "24": {
+          "valid": "int",
+          "excluded": "int",
+          "positive": "int",
+          "negative": "int",
+          "mean_return_pct": "float",
+          "median_return_pct": "float",
+          "mean_mfe_pct": "float",
+          "mean_mae_pct": "float",
+          "first_touch_counts": {
+            "take_first": "int",
+            "stop_first": "int"
+          }
+        }
+      },
+      "nonoverlap_24h": {
+        "4": {
+          "valid": "int",
+          "excluded": "int",
+          "positive": "int",
+          "negative": "int",
+          "mean_return_pct": "float",
+          "median_return_pct": "float",
+          "mean_mfe_pct": "float",
+          "mean_mae_pct": "float",
+          "first_touch_counts": {
+            "neither": "int"
+          }
+        },
+        "12": {
+          "valid": "int",
+          "excluded": "int",
+          "positive": "int",
+          "negative": "int",
+          "mean_return_pct": "float",
+          "median_return_pct": "float",
+          "mean_mfe_pct": "float",
+          "mean_mae_pct": "float",
+          "first_touch_counts": {
+            "neither": "int"
+          }
+        },
+        "24": {
+          "valid": "int",
+          "excluded": "int",
+          "positive": "int",
+          "negative": "int",
+          "mean_return_pct": "float",
+          "median_return_pct": "float",
+          "mean_mfe_pct": "float",
+          "mean_mae_pct": "float",
+          "first_touch_counts": {
+            "stop_first": "int"
+          }
+        }
+      }
+    },
+    "samples": [
+      {
+        "source": "str",
+        "symbol": "str",
+        "side": "str",
+        "completed_at": "str",
+        "nonoverlap_24h": "bool",
+        "meta_reason": "str",
+        "windows": {
+          "4": {
+            "entry_time": "str",
+            "hours": "int",
+            "status": "str",
+            "missing": [
+              "str"
+            ]
+          },
+          "12": {
+            "entry_time": "str",
+            "hours": "int",
+            "status": "str",
+            "missing": [
+              "str"
+            ]
+          },
+          "24": {
+            "entry_time": "str",
+            "hours": "int",
+            "status": "str",
+            "missing": [
+              "str"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

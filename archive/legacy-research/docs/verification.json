@@ -1,0 +1,51 @@
+{
+  "recorded_at_utc": {
+    "redacted_private_metadata": true
+  },
+  "python": "3.11.15",
+  "postgresql": "16.15 (Homebrew)",
+  "pytest": {
+    "command": "uv run --extra cube --group hermes-test pytest -q",
+    "passed": 153,
+    "failed": 0,
+    "skipped": 0,
+    "duration_seconds": 46.43
+  },
+  "ruff": {
+    "command": "uv run ruff check src tests integrations deploy migrations",
+    "passed": true
+  },
+  "lock_check": {
+    "command": "uv lock --check",
+    "passed": true
+  },
+  "configuration": {
+    "redacted_private_metadata": true
+  },
+  "hermes_reference_commit": "<private-artifact-hash>",
+  "artifact": {
+    "wheel": "dist/trading_agent-0.1.1-py3-none-any.whl",
+    "sha256": "<private-artifact-hash>",
+    "installed_wheel_smoke_passed": true,
+    "packaged_migration_head": "0008_market_refresh",
+    "deployment_bundle_installed": false,
+    "deployment_lock_sha256": "<private-artifact-hash>"
+  },
+  "evidence_boundaries": {
+    "postgresql": "real isolated databases",
+    "host_processes": "real local child processes",
+    "hermes": "real pinned native loader and delegate wrapper; model execution fixture",
+    "cube": "lifecycle fixtures and real loopback HTTP cancellation; no live guest",
+    "market_model_notifications": "formal forecast scenarios use fixtures; separate public read-only endpoint probes",
+    "linux_deployment_verified": false,
+    "live_cube_isolation_verified": false,
+    "seven_day_acceptance_passed": false,
+    "live_orders": false,
+    "liquidation_stream": "real loopback WebSocket and isolated PostgreSQL; no live venue sampling",
+    "public_probe": "three statistics endpoints and history candles returned HTTP 200/code 0; time semantics not verified; production instrument not chosen"
+  },
+  "source_files": {
+    "redacted_private_metadata": true
+  },
+  "publication_notice": "历史记录的脱敏副本；未重跑此历史集合，不代表当前安装已验收。"
+}

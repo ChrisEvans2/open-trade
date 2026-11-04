@@ -1,0 +1,8 @@
+name: trading-compat
+version: 0.3.0
+description: Read-only legacy trade evidence and source. Code iteration and its index are retired.
+provides_tools:
+  - legacy_trade_review
+  - legacy_strategy_source
+provides_hooks:
+  - pre_tool_call

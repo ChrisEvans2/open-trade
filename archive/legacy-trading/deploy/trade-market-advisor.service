@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Trading System - market advisor gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/srv/open-trade-deployment
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/srv/open-trade-deployment/.env
+ExecStart=/home/operator/miniconda3/bin/trade-agent advisor-gateway --host 127.0.0.1 --port 8765
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

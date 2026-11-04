@@ -1,0 +1,8 @@
+# 单独兼容配置，不加入正式预测engine配置；启用前填写本机离线源码目录。
+enabled: false
+repository: /srv/open-trade-deployment
+apply_changes: false
+# Cube模板须预装旧项目的测试依赖；此解释器不会在宿主机执行。
+test_python: /opt/trading-test/bin/python
+test_timeout_seconds: 90
+max_source_bytes: 20000000

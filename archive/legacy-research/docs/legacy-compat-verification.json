@@ -1,0 +1,79 @@
+{
+  "recorded_at_utc": {
+    "redacted_private_metadata": true
+  },
+  "client_work_date": "2026-10-08",
+  "authorized_scope": [
+    "legacy trade PnL review",
+    "bounded strategy source changes, trusted tests and records",
+    "move unchanged v1 calculations into hermes-trade"
+  ],
+  "full_v1_regression": {
+    "tests": 175,
+    "passed": 174,
+    "failed": 1,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 47.399
+  },
+  "affected_tests_after_final_changes": {
+    "tests": 26,
+    "passed": 26,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 3.792
+  },
+  "legacy_full_regression": {
+    "tests": 203,
+    "passed": 203,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 26.976
+  },
+  "legacy_frozen_source_snapshot": {
+    "redacted_private_metadata": true
+  },
+  "existing_failure": {
+    "test": "test_native_usage_scope_idempotence_conflicts_and_measurements",
+    "reproduced_on_unmodified_head": true,
+    "baseline_head": "520e9dc",
+    "modified_or_skipped": false,
+    "cause": "Fixed fixture business time excludes real database attempt.started_at from the 24h query"
+  },
+  "quant_migration": {
+    "complete_outputs_matching_before_move": 8,
+    "engine_configuration_hash_unchanged": true
+  },
+  "ruff_passed": true,
+  "both_uv_locks_checked": true,
+  "wheel_sha256": {
+    "redacted_private_metadata": true
+  },
+  "installed_wheels_smoke_passed": true,
+  "evidence_boundaries": {
+    "postgresql": "real isolated PostgreSQL integration databases",
+    "compat_tests": "real local subprocesses on disposable fixtures; production verifier has no local fallback",
+    "legacy_snapshot": "real local test subprocess on frozen trusted repository source; not a Cube guest",
+    "hermes_plugin": "real pinned native loader and role guard",
+    "cube": "SDK/transport fixtures; no real guest or live isolation acceptance",
+    "models": "no real model strategy run",
+    "server_deployment": false,
+    "profile_or_cron_activated": false,
+    "real_strategy_source_changes_applied": false,
+    "exchange_order_calls": false
+  },
+  "necessary_plumbing": [
+    "standalone quantitative dependency and locks",
+    "optional CLI/plugin and disabled policy",
+    "frozen evidence and bounded model view",
+    "exclusive file lock, idempotence, source hash checks and interrupted file recovery",
+    "independent Cube ownership and trusted fixed test command",
+    "append-only JSON and Markdown records outside formal PG task transactions"
+  ],
+  "source_files": {
+    "redacted_private_metadata": true
+  },
+  "publication_notice": "历史记录的脱敏副本；未重跑此历史集合，不代表当前安装已验收。"
+}

@@ -1,0 +1,28 @@
+[Unit]
+Description=Verify and publish sanitized Open Trade framework files
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/srv/open-trade/.local/public-sync/state.json
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/open-trade
+ExecStart=/usr/bin/python3 /srv/open-trade/.local/public-sync/program.py --config /srv/open-trade/.local/public-sync/config.json
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin
+Environment=PYTHONNOUSERSITE=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+TimeoutStartSec=30min
+KillMode=control-group
+UMask=0077
+Nice=10
+CPUQuota=100%
+MemoryMax=1G
+IOWeight=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/open-trade-public /srv/open-trade/.local/public-sync /var/cache/open-trade-sync/uv
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=journal
+StandardError=journal

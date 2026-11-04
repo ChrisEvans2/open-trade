@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Hermes Trade · 模块如何协作</title>
+<style>
+:root{color-scheme:light dark;--bg:light-dark(#f6f7f9,#10151c);--panel:light-dark(#fff,#18212c);--ink:light-dark(#182c39,#e4edf3);--sub:light-dark(#526674,#adc0cc);--line:light-dark(#d8e1e8,#354653);--blue:light-dark(#165fba,#91baff);--blue-soft:light-dark(#eaf3ff,#1c3350);--ai:light-dark(#7250ac,#c6b0f2);--ai-soft:light-dark(#f2edfc,#322a47);--human:light-dark(#88601e,#e5c58a);--human-soft:light-dark(#fcf2df,#3d3321);--active:light-dark(#173b53,#d0e8f6);--active-ink:light-dark(#fff,#132b3b)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}button{font:inherit;color:inherit;cursor:pointer}button:focus-visible,a:focus-visible{outline:3px solid var(--blue);outline-offset:4px}main{max-width:1240px;margin:auto;padding:42px 32px 28px}.eyebrow{color:var(--sub);font-size:12px;letter-spacing:.13em;text-transform:uppercase}h1{font-size:32px;line-height:1.35;letter-spacing:-.03em;margin:10px 0 12px;font-weight:650}h2{font-size:19px;margin:0;font-weight:600}h3{font-size:16px;margin:0 0 8px;font-weight:600}p{margin:0}.intro{color:var(--sub);max-width:820px}.legend{display:flex;gap:18px;flex-wrap:wrap;margin:22px 0}.tag{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:550}.dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--blue)}.ai .dot{background:var(--ai)}.human .dot{background:var(--human)}.control{display:grid;grid-template-columns:1fr 1.7fr;gap:16px;margin:0 0 30px}.strip{padding:15px 18px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.strip p{font-size:13px;color:var(--sub);margin-top:5px}.heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 16px}.hint{color:var(--sub);font-size:12px}.flow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:25px;margin-bottom:26px}.module{position:relative;display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:18px 16px;min-height:225px;width:100%;border:1px solid var(--line);border-radius:14px;background:var(--panel);transition:transform .15s,border-color .15s}.module:hover{transform:translateY(-3px)}.module[aria-pressed="true"]{border:2px solid var(--active);padding:17px 15px}.module:not(:last-child)::after{content:'→';position:absolute;left:calc(100% + 6px);top:93px;color:var(--sub);font-size:20px;pointer-events:none}.num{font-size:12px;letter-spacing:.1em;color:var(--sub)}.module strong{display:block;font-size:18px;font-weight:600;margin:10px 0 9px}.owner{display:inline-flex;font-size:12px;border-radius:5px;padding:2px 7px;background:var(--blue-soft);color:var(--blue);margin-bottom:12px}.module[data-id="prediction"] .owner{background:var(--ai-soft);color:var(--ai)}.module .desc{font-size:13px;color:var(--sub)}.module .out{font-size:12px;margin-top:auto;padding-top:14px;color:var(--ink)}.scope{display:grid;grid-template-columns:1.2fr 1fr;gap:20px;align-items:start}.learning,.detail{border:1px solid var(--line);border-radius:14px;padding:22px;background:var(--panel);min-width:0}.section-kicker{font-size:12px;color:var(--ai);margin-bottom:6px}.learning>p{font-size:13px;color:var(--sub);margin:8px 0 18px}.subflow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.subflow span{padding:5px 9px;background:var(--ai-soft);color:var(--ai);border-radius:5px;font-size:13px}.subflow b{font-size:13px;color:var(--sub);font-weight:400}.bridge{font-size:12px;color:var(--sub);padding:12px 0 15px}.loop{display:grid;grid-template-columns:1fr 1fr;gap:12px}.loop-step{border-top:1px solid var(--line);padding-top:12px}.loop-step .tag{margin-bottom:7px}.loop-step p{font-size:13px;color:var(--sub)}.loop-step.wide{grid-column:1/-1}.loop-back{display:block;width:100%;text-align:left;margin-top:18px;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:10px 12px;font-size:13px}.detail-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline}.detail-owner{font-size:12px;color:var(--sub)}.detail-lead{font-size:14px;margin:12px 0 15px}.details-grid{margin:0;display:grid;grid-template-columns:52px minmax(0,1fr);gap:10px 12px;font-size:13px}.details-grid dt{color:var(--sub)}.details-grid dd{margin:0}.detail-code{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}.detail-code p{font-size:12px;color:var(--sub);margin-bottom:5px}.detail-code code{display:block;font:12px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;color:var(--sub)}.boundaries{margin-top:26px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}.note{border-top:1px solid var(--line);padding-top:16px}.note h3{font-size:14px}.note p{font-size:13px;color:var(--sub)}footer{margin-top:30px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--sub)}details{margin-top:12px}summary{cursor:pointer}details code{display:block;overflow-wrap:anywhere;font-size:12px;margin:8px 0}a{color:var(--blue)}@media(prefers-reduced-motion:reduce){.module{transition:none}.module:hover{transform:none}}@media(max-width:980px){main{padding:28px 22px}.flow{gap:18px}.module{padding:15px 11px}.module[aria-pressed="true"]{padding:14px 10px}.module:not(:last-child)::after{left:calc(100% + 3px);font-size:17px}.module strong{font-size:16px}.scope{grid-template-columns:1fr 1fr}.learning,.detail{padding:18px}}@media(max-width:760px){h1{font-size:26px}.control,.scope{grid-template-columns:1fr}.control{gap:10px}.flow{grid-template-columns:1fr;gap:24px}.module,.module[aria-pressed="true"]{min-height:0;padding:15px 17px;display:grid;grid-template-columns:38px 1fr;gap:0 10px}.module strong{margin:0;font-size:17px;grid-column:2;grid-row:1}.num{grid-row:1/4;padding-top:2px}.owner{grid-column:2;justify-self:start;margin:6px 0}.module .desc,.module .out{grid-column:2}.module .out{padding-top:5px}.module:not(:last-child)::after{content:'↓';left:32px;top:100%;font-size:18px}.boundaries{grid-template-columns:1fr;gap:16px}.heading{align-items:start}.hint{max-width:120px;text-align:right}.detail{scroll-margin-top:15px}main{padding:25px 18px}.loop{grid-template-columns:1fr}.loop-step.wide{grid-column:auto}.legend{gap:12px}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">HERMES TRADE / ARCHITECTURE</div>
+    <h1>行情怎么变成一笔交易</h1>
+    <p class="intro">四个核心模块，加上交易执行。复盘学习归在行情预测内部；下面标出了每一环由谁负责。</p>
+    <div class="legend" aria-label="操作方图例">
+      <span class="tag"><i class="dot" aria-hidden="true"></i>程序：抓取、计算、校验、执行</span>
+      <span class="tag ai"><i class="dot" aria-hidden="true"></i>AI：分析、综合、归纳经验</span>
+      <span class="tag human"><i class="dot" aria-hidden="true"></i>你：配置、授权、运行控制</span>
+    </div>
+  </header>
+
+  <section class="control" aria-label="控制与调度">
+    <div class="strip"><span class="tag human"><i class="dot" aria-hidden="true"></i>你 · 操作与授权</span><p>配置数据源、模型与风险参数；控制暂停、恢复和是否允许执行。</p></div>
+    <div class="strip"><span class="tag"><i class="dot" aria-hidden="true"></i>Runtime · 程序总调度</span><p>统一安排采集、预测、验证、复盘与执行任务。Hermes 负责运行 AI 角色；程序控制任务权限、期限与恢复。</p></div>
+  </section>
+
+  <section aria-label="交易主流程">
+    <div class="heading"><h2>主流程</h2><span class="hint">点击模块，查看背后的操作方</span></div>
+    <div class="flow">
+      <button type="button" class="module" data-id="data" aria-pressed="false" aria-controls="module-detail"><span class="num">01</span><strong>数据抓取</strong><span class="owner">程序 · OKXClient</span><span class="desc">读取 OKX 公共行情，校验已收盘 K 线与数据完整性。</span><span class="out">输出：行情与来源证据</span></button>
+      <button type="button" class="module" data-id="quant" aria-pressed="false" aria-controls="module-detail"><span class="num">02</span><strong>量化计算</strong><span class="owner">程序 · trading-quant</span><span class="desc">计算指标、结构候选、关键价位与边界。</span><span class="out">输出：数字特征与结构证据</span></button>
+      <button type="button" class="module" data-id="prediction" aria-pressed="true" aria-controls="module-detail"><span class="num">03</span><strong>行情预测</strong><span class="owner">AI · 周期子 Agent ＋父 Agent</span><span class="desc">分析趋势和条件情景，综合各周期并提出交易意图。</span><span class="out">输出：开多 / 开空 / 观望 / 平仓</span></button>
+      <button type="button" class="module" data-id="risk" aria-pressed="false" aria-controls="module-detail"><span class="num">04</span><strong>风控</strong><span class="owner">程序 · RiskEngine</span><span class="desc">核验账户风险，计算仓位、杠杆及止损止盈。</span><span class="out">输出：批准参数或拒绝交易</span></button>
+      <button type="button" class="module" data-id="execution" aria-pressed="false" aria-controls="module-detail"><span class="num">05</span><strong>交易执行</strong><span class="owner">程序 · ExecutionService</span><span class="desc">对接模拟成交或 OKX，处理订单与成交核对。</span><span class="out">输出：订单、成交与持仓事实</span></button>
+    </div>
+  </section>
+
+  <div class="scope">
+    <section class="learning" aria-label="行情预测内部与学习闭环">
+      <div class="section-kicker">03 模块内部</div>
+      <h2>预测，也从自己的历史中学习</h2>
+      <p>BTC、ETH 各有四个分析周期；同一套预测系统中，预测与复盘使用不同任务和角色。</p>
+      <div class="subflow" aria-label="周期预测汇入父综合"><span>1h</span><span>4h</span><span>6h</span><span>12h</span><b>→</b><span>父 Agent 综合</span></div>
+      <div class="bridge">各周期独立更新；父 Agent 结合仍有效的预测做判断。</div>
+      <div class="loop">
+        <div class="loop-step"><div class="tag"><i class="dot" aria-hidden="true"></i>程序 · 验证结果</div><p>用后续行情检查目标、失效、方向与耗时，保留成功、失败和未决事实。</p></div>
+        <div class="loop-step"><div class="tag ai"><i class="dot" aria-hidden="true"></i>AI · 预测复盘 Agent</div><p>阅读案例与评分，提出知识点、案例关联和操作指引的更新。</p></div>
+        <div class="loop-step wide"><div class="tag"><i class="dot" aria-hidden="true"></i>程序 · 保存与检索</div><p>校验并追加知识版本。PostgreSQL 保存正式事实，SQLite / FTS5 提供可重建检索；预测 Agent 下次分析时读取。</p></div>
+      </div>
+      <button type="button" class="loop-back" data-id="review" aria-controls="module-detail" aria-pressed="false">↳ 查看复盘职责与“经验 → 下次预测”的衔接</button>
+    </section>
+
+    <section class="detail" id="module-detail" aria-label="所选模块详情" aria-live="polite" aria-atomic="true">
+      <div class="detail-head"><h2 id="detail-title">行情预测</h2><span class="detail-owner" id="detail-owner">AI 判断 ＋ 程序校验</span></div>
+      <p class="detail-lead" id="detail-lead">子 Agent 分周期分析；父 Agent 负责综合决策。模型只提出意图，订单由后续程序处理。</p>
+      <dl class="details-grid"><dt>谁操作</dt><dd id="detail-actor">Hermes 运行四个周期角色和父综合角色，Runtime 安排任务。</dd><dt>输入</dt><dd id="detail-input">冻结行情、量化特征、结构候选、有效子预测、知识与持仓上下文。</dd><dt>输出</dt><dd id="detail-output">结构、概率、触发条件、目标区间、失效条件与期限；父综合发布交易意图。</dd><dt>权限</dt><dd id="detail-access">通过授权研究工具读数据、提交报告；不能调用订单接口或提高风险上限。</dd></dl>
+      <div class="detail-code"><p>对应源码 · 相对 /srv/open-trade</p><div id="detail-files"><code>trading-agent/src/trading_agent/prediction/service.py</code><code>trading-agent/src/trading_agent/runtime/agent_runner.py</code></div></div>
+    </section>
+  </div>
+
+  <section class="boundaries" aria-label="重要衔接说明">
+    <div class="note"><h3>OKX API key 放在哪一环？</h3><p>公共行情抓取客户端不需要 key。账户、持仓和订单读取走私有接口；交易执行使用相应权限。凭证由程序配置，分析模型不需要持有交易密钥。</p></div>
+    <div class="note"><h3>AI 决策与程序执行怎样分工？</h3><p>AI 判断方向与情景；程序验证预测条件、风险和订单状态。父预测失效或转向可提出平仓；单纯预测到期继续现有持仓保护。</p></div>
+    <div class="note"><h3>学习能改动什么？</h3><p>复盘提出知识更新。期限调整由程序经过历史回放、后续影子验证和回滚规则控制；不改写已发布预测、历史评分或策略源码。</p></div>
+  </section>
+
+  <footer>
+    <p>依据：/srv/open-trade 当前源码与预测驱动交付文档 · 2026-10-15。此图展示代码职责与主要依赖顺序，运行中由任务调度连接，不表示每次都全量重跑。</p>
+    <p>执行开关代码默认值为 false；未读取或确认线上配置、当前模型型号和服务状态。本页为离线说明，不请求 OKX，不启动交易，不修改项目代码。</p>
+    <details><summary>查看说明依据与完整路径</summary><code>/srv/open-trade/docs/prediction-driven-implementation.md</code><code>/srv/open-trade/docs/prediction-driven-validation.md</code><code>/srv/open-trade/trading-agent/src/trading_agent/runtime/lifecycle.py</code><code>/srv/open-trade/trading-agent/src/trading_agent/prediction/scheduler.py</code><code>/srv/open-trade/trading-agent/prompts/structural/review.md</code></details>
+  </footer>
+</main>
+<script>
+(() => {
+  'use strict';
+  const modules = {
+    data: {title:'数据抓取',owner:'程序负责',lead:'由 OKXClient 发起公共 GET 请求，PredictionMarket 组织采集；这一环不靠 AI 抓行情。',actor:'Runtime 调度 Python 采集程序，OKX 是外部数据提供方。',input:'币种、合约、周期、时间边界与采集截止时间。',output:'已收盘 K 线、资金费率、持仓量等可用观测；校验并冻结来源证据。',access:'当前公共行情客户端只允许指定公共 GET 路径。账户私有读取与下单由执行侧另行处理。',files:['trading-agent/src/trading_agent/market/okx.py','trading-agent/src/trading_agent/prediction/market.py','trading-agent/src/trading_agent/market/observations.py']},
+    quant:{title:'量化计算',owner:'程序负责',lead:'把行情变成可核验的数字与结构候选，供模型分析，也供程序检查条件。',actor:'共享 Python 包 trading-quant；公式和几何规则由确定性代码执行。',input:'每个币种、每个周期的已收盘行情及可用外部观测。',output:'ATR、ADX、RSI 等指标，以及 W 底、三角形、箱体候选、支撑阻力与阶段。',access:'只计算，不判断最终是否下单。结构候选不等于交易指令；缺失数据不能编造。',files:['packages/trading-quant/src/trading_quant/features.py','packages/trading-quant/src/trading_quant/structures.py']},
+    prediction:{title:'行情预测',owner:'AI 判断 ＋ 程序校验',lead:'子 Agent 分周期分析；父 Agent 负责综合决策。模型只提出意图，订单由后续程序处理。',actor:'Hermes 运行四个周期角色和父综合角色，Runtime 安排任务。模型型号由实际 Profile／部署配置决定，本图不假定具体型号。',input:'冻结行情、量化特征、结构候选、有效子预测、知识与持仓上下文。预测原始 K 线视图每周期 30 根，后台指标与结构计算每周期 80 根。',output:'结构、概率、触发条件、目标区间、失效条件与期限；父综合发布交易意图。',access:'通过授权研究工具读数据、提交报告；不能调用订单接口或提高风险上限。程序验证报告与引用。',files:['trading-agent/src/trading_agent/prediction/service.py','trading-agent/src/trading_agent/runtime/agent_runner.py','trading-agent/prompts/structural/parent.md']},
+    risk:{title:'风控',owner:'程序负责',lead:'父 Agent 提出方向之后，复用既有风险规则计算交易参数，并决定是否允许执行。',actor:'PredictionRiskAdapter 连接原有 RiskEngine 与风险参数计算代码。',input:'父交易意图、当前行情、账户权益、持仓、风险配置及趋势／震荡类型。',output:'允许或拒绝；允许时确定仓位、杠杆、实际止损止盈及相关保护参数。',access:'模型不能扩大风险上限。预测目标区间与实际订单止盈分别记录，不直接用预测目标替换原公式。',files:['src/trading_system/prediction_adapter.py','src/trading_system/risk/engine.py','src/trading_system/strategy/risk_parameters.py']},
+    execution:{title:'交易执行',owner:'程序负责',lead:'只有确定性执行服务调用订单 Transport；具体使用模拟还是 OKX，取决于执行开关和实际配置。',actor:'ExecutionService 管理订单状态；PaperTransport 或 OKXTransport 处理外部交互，后者复用 OKXLiveExecutor。',input:'有效交易意图、通过风控的订单参数、账户和持仓版本。',output:'订单提交／查询／撤销结果、增量成交、持仓与费用事实。',access:'先持久化再发送；未知结果先查询，不盲目重发。同一账户只能使用一个交易入口。执行开关默认关闭。',files:['trading-agent/src/trading_agent/execution/service.py','trading-agent/src/trading_agent/execution/transport.py','src/trading_system/execution/live.py']},
+    review:{title:'预测复盘与学习',owner:'预测模块内部',lead:'复盘归属行情预测系统，但使用单独的预测复盘角色；不是让每次预测任务同时完成全部学习。',actor:'程序负责验证与评分；Hermes 运行预测复盘 Agent 归纳知识；程序负责保存版本、检索和期限验证。',input:'历史预测冻结证据、后续验证结果、已有知识，以及本币种四周期各 80 根复盘行情。',output:'知识点 summary、案例 content、操作 procedure 的更新建议；校验保存后，供后续预测检索。',access:'不能改策略代码、风控或历史事实。期限学习由程序执行回放、影子验证与回滚，不由 Agent 直接改生效规则。',files:['trading-agent/prompts/structural/review.md','trading-agent/src/trading_agent/knowledge/service.py','trading-agent/src/trading_agent/prediction/evaluation.py','trading-agent/src/trading_agent/prediction/horizons.py']}
+  };
+  const buttons = Array.from(document.querySelectorAll('button[data-id]'));
+  function select(id,scroll) {
+    const item = modules[id];
+    if(!item) return;
+    buttons.forEach(button => button.setAttribute('aria-pressed',String(button.dataset.id === id)));
+    for(const key of ['title','owner','lead','actor','input','output','access']) document.getElementById('detail-'+key).textContent=item[key];
+    const list=document.getElementById('detail-files');
+    list.replaceChildren(...item.files.map(file => {const code=document.createElement('code');code.textContent=file;return code;}));
+    if(scroll && window.matchMedia('(max-width:760px)').matches) document.getElementById('module-detail').scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth',block:'start'});
+  }
+  buttons.forEach(button=>button.addEventListener('click',()=>select(button.dataset.id,true)));
+  select('prediction',false);
+})();
+</script>
+</body>
+</html>

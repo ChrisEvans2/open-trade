@@ -1,0 +1,19 @@
+[Unit]
+Description=AI Trading System - OKX live trading daemon
+After=network-online.target litellm-vertex.service trade-market-advisor.service
+Wants=network-online.target trade-market-advisor.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/srv/open-trade-deployment
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/home/operator/.hermes/.env
+Environment=TRADING_CONFIG_DIR=/srv/open-trade-deployment/config
+Environment=TRADING_LOG_DIR=/srv/open-trade-deployment/logs
+ExecStart=/home/operator/miniconda3/bin/trade-agent daemon --timeframe 1h --market-data okx --use-litellm --interval-seconds 3600 --mark-interval-seconds 300 --symbol-delay-seconds 5
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

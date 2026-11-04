@@ -1,0 +1,14 @@
+# 通用暂停示例；不复制操作者实际币池或筛选阈值。
+symbols:
+  - symbol: BTCUSDT
+    base_asset: BTC
+    market_tier: core
+    timeframe: 1h
+    enabled: false
+    live_enabled: false
+  - symbol: ETHUSDT
+    base_asset: ETH
+    market_tier: core
+    timeframe: 1h
+    enabled: false
+    live_enabled: false

@@ -1,0 +1,100 @@
+{
+  "offline_only": true,
+  "findings": [
+    {
+      "case": "zero_fill_live",
+      "violation": true,
+      "reported_success": true,
+      "invented_fill_price": 100000.0,
+      "invented_contracts": 0.01
+    },
+    {
+      "case": "zero_fill_canceled",
+      "violation": true,
+      "reported_success": true,
+      "invented_fill_price": 100000.0,
+      "invented_contracts": 0.01
+    },
+    {
+      "case": "filled_but_protection_failed",
+      "violation": true,
+      "exchange_has_fill": true,
+      "reported_success": false,
+      "returned_order_missing": true,
+      "protection_count": 0
+    },
+    {
+      "case": "retry_after_protection_failure",
+      "violation": true,
+      "open_submissions_same_client_id": 2,
+      "same_id": true
+    },
+    {
+      "case": "close_minimum_lot_after_price_rise",
+      "actual_contracts": 0.01,
+      "error": "order size 0.00 below OKX minSz 0.01",
+      "violation": true
+    },
+    {
+      "case": "partial_close_erases_entire_local_position",
+      "violation": true,
+      "actual_closed_contracts": 0.01,
+      "expected_remaining_contracts": 0.09,
+      "local_position_present": false
+    },
+    {
+      "case": "reconcile_direction",
+      "violation": true,
+      "local_long_contracts": 0.1,
+      "exchange_contracts": "-0.1",
+      "reconcile_reported_ok": true
+    },
+    {
+      "case": "reconcile_size",
+      "violation": true,
+      "local_long_contracts": 0.1,
+      "exchange_contracts": "0.01",
+      "reconcile_reported_ok": true
+    },
+    {
+      "case": "configured_range_block_unused",
+      "violation": true,
+      "code_gate_accepted": true,
+      "configured_block_regimes": [
+        "range",
+        "choppy_high_vol",
+        "transition",
+        "shock"
+      ],
+      "regime": "range",
+      "entry": 101.7,
+      "invalidation": 100.6,
+      "result_signal": "long",
+      "rejection_reasons": []
+    },
+    {
+      "case": "long_invalidation_above_entry",
+      "violation": true,
+      "code_gate_accepted": true,
+      "configured_block_regimes": [
+        "range",
+        "choppy_high_vol",
+        "transition",
+        "shock"
+      ],
+      "regime": "trend_up",
+      "entry": 101.7,
+      "invalidation": 102.8,
+      "result_signal": "long",
+      "rejection_reasons": []
+    }
+  ],
+  "positive_control": {
+    "gates_allow_trade": true,
+    "fake_submissions": 1,
+    "success": true,
+    "fake_protections": 1,
+    "decision_reason": "代码策略 long 成立，社媒风险 low，技术止损 2.00%，风险预算 1.00%，保证金 10.00%，名义仓位 50.00%，动态杠杆 5.00x。"
+  },
+  "publication_notice": "历史记录的脱敏副本；未重跑此历史集合，不代表当前安装已验收。"
+}

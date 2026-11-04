@@ -1,0 +1,95 @@
+{
+  "date": "2026-10-10",
+  "branch": "dev",
+  "scope": "策略迭代历史经验召回及summary/content分层，独立可选兼容入口",
+  "implementation": {
+    "store": "独立SQLite/FTS5 trigram派生索引",
+    "sources": [
+      "Strategy-iteration/*.md",
+      "workspaces/v1-compat/iterations/<UUID>/"
+    ],
+    "search": "主题/币种/路径筛选与关键词全部匹配；先返回最多5张摘要",
+    "read": "冻结清单授权ID+Unicode字符分页",
+    "references": "迭代请求可选memory_recall_id/memory_experience_ids，保存memory.json与Markdown引用",
+    "old_requests": "不携带引用时保持原指纹和幂等结果"
+  },
+  "necessary_plumbing": [
+    "主题分类版本与来源状态区分",
+    "来源/补丁/hash校验及输入预算",
+    "SQLite版本检查与独立索引锁",
+    "冻结清单/内容版本/正文hash及有界元数据",
+    "CLI与两个可选原生Hermes工具"
+  ],
+  "checks": [
+    {
+      "suite": "旧框架完整回归",
+      "command": "uv run --frozen --extra dev pytest -q",
+      "passed": 203,
+      "failed": 0
+    },
+    {
+      "suite": "v1完整回归，真实PG迁移与固定Hermes原生参考",
+      "passed": 185,
+      "failed": 1,
+      "skipped": 0,
+      "artifact": ".local/strategy-memory-tests.xml",
+      "note": "后续仅做经验元数据大小和清单格式校验收紧，再运行相关37项"
+    },
+    {
+      "suite": "最终相关回归",
+      "command": "uv run --frozen --extra cube --group hermes-test pytest -q tests/unit/test_strategy_experiences.py tests/unit/test_legacy_compat.py tests/unit/test_legacy_cube.py tests/unit/test_quant_owner.py tests/hermes/test_plugins.py",
+      "passed": 37,
+      "failed": 0,
+      "artifact": ".local/strategy-memory-targeted.xml"
+    },
+    {
+      "check": "真实SQLite/FTS5，来源版本追加与旧召回复用，分页、篡改/越权/符号链接/数据库版本/输入限额/锁拒绝",
+      "result": "passed"
+    },
+    {
+      "check": "固定Hermes原生插件经CLI执行search/read；正式attempt hook及handler拒绝",
+      "result": "passed"
+    },
+    {
+      "check": "wheel构建及模块/契约/插件资源检查",
+      "result": "passed"
+    },
+    {
+      "check": "Ruff与两份依赖锁检查",
+      "result": "passed"
+    },
+    {
+      "check": "全部可提交文件在临时Git索引执行diff --cached --check；无密钥/状态/索引/本地产物；实际暂存区未改变",
+      "result": "passed"
+    }
+  ],
+  "historical_records_smoke": {
+    "redacted_private_metadata": true
+  },
+  "protected_formal_source_files_byte_unchanged": 57,
+  "new_tests": {
+    "experience_tests": 10,
+    "hermes_native_memory_test": 1
+  },
+  "known_failure": {
+    "test": "tests/integration/test_metrics.py::test_native_usage_scope_idempotence_conflicts_and_measurements",
+    "reason": "固定fixture业务时点与数据库实际started_at不一致；24小时窗口排除样本",
+    "prior_baseline_evidence": "legacy-compat-verification.json",
+    "fixed_this_task": false
+  },
+  "not_done": [
+    "40%样本重叠门槛或语义去重",
+    "LLM自动新增/合并/纠错经验",
+    "行情特征适用条件匹配",
+    "后续收益归因和检索效果实验",
+    "策略经验注入正式预测",
+    "经验过期/退休和索引历史版本自动清理",
+    "服务器部署/Profile/cron切换",
+    "commit或push"
+  ],
+  "acceptance_boundary": "隔离本地证据；没有真实模型/Cube新增联调，不能称为在线收益或检索质量验收",
+  "source_sha256": {
+    "redacted_private_metadata": true
+  },
+  "publication_notice": "历史记录的脱敏副本；未重跑此历史集合，不代表当前安装已验收。"
+}

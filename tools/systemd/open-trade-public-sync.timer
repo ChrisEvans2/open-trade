@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for stable Open Trade framework changes each minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=5s
+RandomizedDelaySec=5s
+Persistent=true
+Unit=open-trade-public-sync.service
+
+[Install]
+WantedBy=timers.target

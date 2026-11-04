@@ -1,0 +1,104 @@
+{
+  "date": "2026-10-08",
+  "scope": "将已有新v1与兼容实现归入hermes-trade的dev工作区；没有增加业务功能",
+  "branch": "dev",
+  "target_base_commit": {
+    "redacted_private_metadata": true
+  },
+  "v1_origin_base_commit": {
+    "redacted_private_metadata": true
+  },
+  "layout": {
+    "v1": "trading-agent/",
+    "quant": "packages/trading-quant/",
+    "nested_git": false,
+    "external_trading_source_dependency": false
+  },
+  "copy_comparison": {
+    "original_source_files": 145,
+    "different_files": [
+      "AGENTS.md",
+      "README.md",
+      "docs/implementation-status.md",
+      "docs/legacy-compatibility.md",
+      "legacy-policy.example.yaml",
+      "pyproject.toml",
+      "uv.lock"
+    ],
+    "all_business_python_prompts_plugins_migrations_byte_identical": true
+  },
+  "checks": [
+    {
+      "command": "uv run --frozen --extra dev pytest -q",
+      "cwd": ".",
+      "passed": 203,
+      "failed": 0
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q --junitxml=.local/monorepo-tests.xml",
+      "cwd": "trading-agent",
+      "postgres": "真实隔离测试数据库，运行八份迁移",
+      "hermes": "固定参考提交原生插件测试",
+      "passed": 174,
+      "failed": 1,
+      "skipped": 0
+    },
+    {
+      "check": "独立导出本仓库可提交文件，不复制虚拟环境或外部交易源码",
+      "locks": "两份uv lock --check通过",
+      "install": "两套uv sync --frozen通过",
+      "targeted_tests_passed": 21,
+      "imports": "两个入口、共享计算包、六份正式提示词和兼容插件来自独立副本"
+    },
+    {
+      "check": "Ruff覆盖v1源码/测试/插件/迁移/部署及新增共享量化入口",
+      "result": "passed"
+    },
+    {
+      "check": "ta config check --json",
+      "valid": true,
+      "configuration_complete": false,
+      "expected_exit_code": 1,
+      "reason": "示例配置未绑定真实模型、Hermes、Cube、合约和消息目标"
+    },
+    {
+      "check": "全部新增及修改文件在临时Git索引中执行git diff --cached --check；不改变用户暂存区",
+      "result": "passed",
+      "commit_scope_excludes": [
+        ".DS_Store",
+        "Feature.md",
+        ".env",
+        ".venv",
+        ".local",
+        "logs",
+        "state",
+        "workspaces"
+      ]
+    }
+  ],
+  "known_failure": {
+    "test": "tests/integration/test_metrics.py::test_native_usage_scope_idempotence_conflicts_and_measurements",
+    "reason": "固定fixture业务时点与数据库attempt.started_at实际时点不同，24小时窗口排除样本",
+    "baseline_reproduction": "上一轮在原v1未修改HEAD复现；见legacy-compat-verification.json",
+    "changed_in_this_task": false
+  },
+  "not_done": [
+    "commit或push",
+    "服务器同步、部署或重启",
+    "Profile或cron切换",
+    "启用兼容写回",
+    "真实Cube guest/模型联调",
+    "订单联动、合约账本、收益实验",
+    "修复原有用量统计测试"
+  ],
+  "local_evidence_ignored": [
+    "trading-agent/.local/monorepo-tests.xml",
+    "trading-agent/.local/monorepo-tests.txt",
+    "trading-agent/.local/monorepo-isolated.txt"
+  ],
+  "historical_evidence": "verification.json与legacy-compat-verification.json保留原验证时的文件路径/hash；本文件记录本次同仓库布局",
+  "source_sha256": {
+    "redacted_private_metadata": true
+  },
+  "publication_notice": "历史记录的脱敏副本；未重跑此历史集合，不代表当前安装已验收。"
+}
