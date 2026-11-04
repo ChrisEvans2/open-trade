@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up trading research PostgreSQL daily
+
+[Timer]
+OnCalendar=*-*-* 02:40:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=trading-agent-backup.service
+
+[Install]
+WantedBy=timers.target

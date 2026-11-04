@@ -1,0 +1,13 @@
+name: trading-research
+version: 0.2.0
+description: Read frozen task evidence and submit guarded research through native Hermes delegation.
+provides_tools:
+  - research_context
+  - timeframes_analyze
+  - review_submit
+  - decision_submit
+  - knowledge_search
+  - knowledge_expand
+provides_hooks:
+  - subagent_start
+  - pre_tool_call

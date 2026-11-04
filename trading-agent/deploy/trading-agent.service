@@ -1,0 +1,26 @@
+[Unit]
+Description=Hermes structural prediction runtime
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=trading-agent
+Group=trading-agent
+WorkingDirectory=/opt/trading-agent
+EnvironmentFile=/etc/trading-agent/runtime.env
+ExecStart=/opt/trading-agent/.venv/bin/ta --config /etc/trading-agent/config.yaml serve
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=35
+KillMode=mixed
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/trading-agent
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

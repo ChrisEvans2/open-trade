@@ -1,0 +1,8 @@
+agents: {}
+market_advisor:
+  enabled: false
+runtime:
+  mode: paused
+  execution_mode: paper
+  social_ai_enabled: false
+  report_to_telegram: false

@@ -1,0 +1,14 @@
+[Unit]
+Description=Hermes single-node Cube local access boundary
+After=network-pre.target docker.service
+Before=cube-sandbox-cube-api.service cube-sandbox-cube-proxy.service
+
+[Service]
+Type=oneshot
+# Set the explicit public interface for the target host before installation.
+ExecStart=/usr/local/libexec/hermes-cube-local-boundary apply eth0
+RemainAfterExit=yes
+# Stopping the unit retains protection. Remove only with the explicit script command.
+
+[Install]
+WantedBy=multi-user.target

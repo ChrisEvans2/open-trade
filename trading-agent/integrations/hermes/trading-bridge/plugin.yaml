@@ -1,0 +1,16 @@
+name: trading-bridge
+version: 0.2.0
+description: Connect controller Hermes to the trading runtime for queries and bounded research requests.
+provides_tools:
+  - trading_status
+  - trading_positions
+  - trading_prediction_latest
+  - trading_prediction_get
+  - trading_intent_get
+  - trading_latest
+  - trading_forecast_get
+  - trading_job_create
+  - trading_job_get
+  - trading_strategy_list
+  - trading_experiment_get
+  - trading_review_get

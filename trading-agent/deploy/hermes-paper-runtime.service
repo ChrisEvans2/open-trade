@@ -1,0 +1,29 @@
+[Unit]
+Description=Open Trade paper-only runtime template
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=open-trade
+Group=open-trade
+WorkingDirectory=/opt/open-trade/trading-agent
+EnvironmentFile=/etc/open-trade/runtime.env
+Environment=HOME=/var/lib/open-trade/hermes
+Environment=PYTHONNOUSERSITE=1
+ExecStartPre=/opt/open-trade/trading-agent/.venv/bin/python /opt/open-trade/trading-agent/deploy/require-paper.py --config /etc/open-trade/config.yaml
+ExecStart=/opt/open-trade/trading-agent/.venv/bin/ta --config /etc/open-trade/config.yaml serve
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=35
+KillMode=mixed
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/open-trade
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,8 @@
+mode: paused
+execution_mode: paper
+global_paused: true
+emergency: false
+paused_symbols: []
+hard_stop_reason: null
+hard_stop_at: null
+order_failure_count: 0

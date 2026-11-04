@@ -1,0 +1,22 @@
+[project]
+name = "trading-core"
+version = "0.1.0"
+description = "Shared deterministic risk, position accounting and execution primitives"
+requires-python = ">=3.11"
+dependencies = [
+  "trading-quant==0.1.0",
+  "httpx>=0.27.0",
+  "pydantic>=2.7.0",
+  "python-dotenv>=1.0.0",
+  "pyyaml>=6.0.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trading_core"]
+
+[tool.uv.sources]
+trading-quant = { path = "../trading-quant", editable = true }

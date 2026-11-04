@@ -1,0 +1,69 @@
+schema_version: 2
+market:
+  credentials_file: null
+  source: okx_contract_public
+  base_url: https://www.okx.com
+  public_ws_url: wss://ws.okx.com/ws/v5/public
+  symbol: BTCUSDT
+  inst_id: null
+  contract_type: null
+  settlement_asset: null
+  taker_timestamp: open
+  taker_source: trade_minutes
+  trade_minutes:
+    raw_retention_hours: 24
+    bootstrap_days: 11
+    repair_lookback_days: 30
+    max_requests_per_cycle: 300
+    max_pages_per_minute: 300
+    cycle_budget_seconds: 40
+  oi_history_timestamp: open
+  long_short_timestamp: open
+  calculation_bars_per_interval: 80
+  agent_bars_per_interval: 30
+features:
+  spec_version: ohlcv_wilder_v1_trade_minutes_v1
+  market_basket:
+  - BTC-USDT-SWAP
+  - ETH-USDT-SWAP
+  - SOL-USDT-SWAP
+  - XRP-USDT-SWAP
+  - DOGE-USDT-SWAP
+paper:
+  enabled: false
+experiment:
+  enabled: false
+runtime:
+  api_host: 127.0.0.1
+  api_port: 8765
+  api_workers: 1
+  data_dir: .local
+hermes:
+  executable: null
+  python_executable: null
+  home: null
+  repository: null
+  reference_commit: 71cb7d60f8469768e597e39d9ddb682a4e20dbfc
+  controller_profile: null
+  trading_profile: trading
+  trading_telegram_enabled: false
+  provider: null
+  model: null
+  model_base_url: null
+  reasoning_effort: null
+sandbox:
+  idle_timeout_seconds: 180
+  renew_interval_seconds: 15
+  timeout_grace_seconds: 15
+  proxy_node_ip: null
+  isolation_report: null
+  base_url: null
+  template: null
+  sdk_version: null
+  execution_user: research
+  isolation_verified: false
+notification:
+  target: null
+prediction:
+  execution_enabled: false
+  legacy_config_dir: ../config

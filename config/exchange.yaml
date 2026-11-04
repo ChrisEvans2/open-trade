@@ -1,0 +1,9 @@
+exchange:
+  name: okx
+  base_url: https://www.okx.com
+  user_agent: "open-trade/0.1 (OKX REST client)"
+  simulated_trading: true
+  use_private_read: false
+  trust_env_proxy: false
+  instruments:
+    default_inst_type: SWAP

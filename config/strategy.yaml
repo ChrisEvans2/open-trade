@@ -1,0 +1,4 @@
+# Formula defaults are defined in trading_core.parameters and policy.
+# Supply a reviewed policy before enabling execution.
+freqtrade_style:
+  enabled: true

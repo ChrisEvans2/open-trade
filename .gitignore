@@ -1,0 +1,36 @@
+# Credentials and local operator configuration
+.env
+.env.*
+*.env
+!.env.example
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+**/auth.json
+**/secrets/
+**/.ssh/
+config/local/
+# Local work, state and test artifacts
+Feature.md
+.local/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+logs/
+state/
+workspaces/
+*.sqlite
+*.sqlite3
+*.dump
+*.backup
+# Build artifacts
+dist/
+build/
+*.egg-info/
+.DS_Store

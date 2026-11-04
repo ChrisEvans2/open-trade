@@ -1,0 +1,5 @@
+# 示例交易策略
+
+这些文件为公共框架新写，未复制使用者的交易配置、风险参数或账户。执行模式为paper，策略为paused，global_paused为true，allow_new_entries为false；runtime示例也关闭prediction.execution_enabled。
+
+运行前应在Git外维护自己的配置目录，并显式配置prediction.legacy_config_dir。不要把账户状态、原始令牌、交易所口令或个人策略配置提交到公共仓库。

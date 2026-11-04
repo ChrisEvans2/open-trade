@@ -1,0 +1,6 @@
+name: trading-cube
+version: 0.1.0
+description: Use an attempt-owned CubeSandbox terminal without local fallback or host mounts.
+provides_hooks: []
+python_dependencies:
+  - cubesandbox==0.7.0

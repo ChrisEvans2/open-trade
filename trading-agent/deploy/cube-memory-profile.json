@@ -1,0 +1,15 @@
+{
+  "cube_version": "v0.7.3",
+  "cubelet": {
+    "GOMEMLIMIT": "160MiB",
+    "plugins.io.cubelet.internal.v1.network.tap_init_num": 16,
+    "plugins.io.cubelet.internal.v1.cgroup.pool_size": 32
+  },
+  "cube_proxy": {
+    "worker_processes": 2,
+    "worker_connections": 4096
+  },
+  "mysql_options_file": "cube-mysql-memory.cnf",
+  "sandbox_spec_unchanged": true,
+  "business_runtime_concurrency_unchanged": true
+}

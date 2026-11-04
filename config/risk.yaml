@@ -1,0 +1,22 @@
+# Illustrative paused policy; not an operator's account limits.
+defaults:
+  max_position_pct: 0.01
+  min_position_margin: 1.0
+  min_leverage: 1.0
+  max_leverage: 1.0
+  max_daily_loss_pct: 0.01
+  max_single_trade_loss_pct: 0.005
+  max_drawdown_pct: 0.03
+  max_consecutive_losses: 3
+  max_open_positions: 1
+  max_same_direction_positions: 1
+  max_same_direction_margin_pct: 0.01
+  max_notional_pct: 0.01
+  max_slippage_pct: 0.001
+  allow_short: false
+  allow_new_entries: false
+modes:
+  paused:
+    allow_new_entries: false
+  emergency:
+    allow_new_entries: false

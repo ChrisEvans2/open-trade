@@ -1,0 +1,10 @@
+# Small-host Cube control database. Keep instrumentation and InnoDB durability.
+[mysqld]
+performance_schema=ON
+performance_schema_digests_size=1024
+performance_schema_events_statements_history_long_size=1024
+performance_schema_events_stages_history_long_size=1024
+performance_schema_events_transactions_history_long_size=1024
+performance_schema_events_waits_history_long_size=1024
+table_open_cache=512
+table_definition_cache=512

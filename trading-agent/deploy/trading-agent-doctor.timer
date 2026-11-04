@@ -1,0 +1,11 @@
+[Unit]
+Description=Check trading research runtime every five minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+AccuracySec=10s
+Unit=trading-agent-doctor.service
+
+[Install]
+WantedBy=timers.target
