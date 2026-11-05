@@ -239,4 +239,6 @@ uv run --frozen --extra dev pytest -q
 - [已知限制](docs/limitations.md)、[公开范围与逐项处理](docs/publication-scope.md)
 - [维护与自动同步](docs/automatic-sync.md)
 
-本仓库尚未指定许可证。
+## 许可证
+
+本项目采用 [MIT License](LICENSE)，版权署名为 `2026 ChrisEvans2`。
