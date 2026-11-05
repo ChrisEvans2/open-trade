@@ -1,31 +1,157 @@
 # Open Trade
 
-BTC、ETH 的多周期结构与趋势预测驱动交易。唯一运行入口是 `trading-agent/` 中的
-`ta --config <配置文件> serve`；先完成部署校验，再启动一个 runtime。
+BTC、ETH 的多周期结构与趋势预测驱动交易。
 
-用户交互链路保留：**你 / TG ⇄ Hermes Gateway ⇄ 主控 Hermes ⇄ 交易 runtime ⇄ 独立预测 Hermes**。
-主控负责对话、查询预测/持仓/运行状态、申请解释和复盘；预测 Hermes 内的父/子 Agent 负责
-分析与交易意图，两者使用隔离 Profile。通知复用现有 outbox 与 HermesSender，经主控 Profile
-发送，不另建网关。一个业务 runtime 不等于只保留一个 Hermes 角色。
+**系统有一条从行情到交易的主线，一条验证与学习的反馈链，以及交互、调度、存储等公共支撑。**
+下面按当前源码说明各模块如何连接；源码中的功能需要独立配置与验收后才能用于实际运行。
 
-| 目录 | 职责 |
+## 业务主线与反馈链
+
+```mermaid
+flowchart TD
+    A[数据抓取与校验] --> B[指标计算与结构候选]
+    B --> C[各周期子预测]
+    C --> D[父Agent综合]
+    D --> E[程序保存交易意图]
+    E --> F[风控检查与参数计算]
+    F --> G[订单执行与成交记账]
+    G --> H[持仓与账户状态]
+    H --> F
+    A --> V[逐分钟验证与评分]
+    C --> V
+    D --> V
+    V -->|确认需要更新预测| C
+    V --> R[复盘与知识版本更新]
+    C -->|原预测与冻结证据| R
+    D -->|原综合与冻结证据| R
+    R --> K[知识检索]
+    K --> C
+    K --> D
+```
+
+图中的风控通过后才进入执行；HOLD 不生成交易订单。预测是否有效由程序持续验证，
+复盘利用历史预测、当时证据和评分改善后续分析。下面展开这六个业务模块。
+
+## 六个业务模块内部如何连接
+
+### 1. 数据抓取：外部数据 → 可供计算的行情证据
+
+- **行情读取**：获取已收盘K线、当前未收盘快照、合约信息，以及OI、资金费率、多空比等观测。
+  固定币种篮子的K线交给市场宽度计算；读取适配器与订单发送适配器分开。
+- **逐笔成交采集**：历史逐笔 → 按分钟区分主动买量/卖量 → 与同分钟K线量校验 → 保存分钟事实。
+  CVD 使用这些分钟事实。断点续抓和历史补抓属于采集模块，不由预测Agent执行。
+- **强平样本采集**：单独的WebSocket采样器保存公开样本及覆盖范围，供辅助指标读取。
+- **证据入库与冻结**：记录合约、时间、来源版本和质量；预测准备程序选取本次允许使用的数据。
+  缺失数据保留缺失标记，不补造买卖量。
+
+### 2. 指标计算与结构分析：行情证据 → 数值、候选结构 → 预测输入
+
+- **指标公式**：收益率、ATR、RSI等技术指标，以及CVD、OI变化、资金费率、市场宽度等外部指标。
+  分钟买卖量先按对应周期汇总，再参与该周期的CVD计算；覆盖不足会影响质量标记。
+- **结构几何计算**：关键点 → 箱体、三角、W底等候选 → 边界、阶段、容差与证据。
+  程序生成候选，预测Agent选择和解释；形态名称不会直接生成订单。
+- **模型输入组织**：每周期后台使用80根已收盘K线计算指标；临时指标使用80根已收盘K线＋1根未收盘快照。
+  子模型收到30根已收盘K线明细＋同一根未收盘快照，以及计算结果。输入按本次时点固定保存。
+
+### 3. 预测与复盘：预测、验证、知识更新和期限学习
+
+每币种维护1h、4h、6h、12h四个子周期预测和一个父综合。子预测说明该周期的结构、条件情景、
+目标和期限；父综合判断各周期关系并选择交易动作。验证评分、模型复盘和程序期限学习分别负责后续不同工作。
+
+| 内部功能 | 输入、处理与交接 |
 | --- | --- |
-| `trading-agent/` | 唯一 runtime：行情证据、各周期预测、父 Agent 综合、知识库、复盘学习、持久化执行与 API |
-| `packages/trading-core/` | 共享交易核心：确定性风控、原有风险参数、仓位记账、退出判断及执行客户端；没有 CLI 或调度器 |
-| `packages/trading-quant/` | 共享量化库：指标与结构几何计算；没有模型、账户或订单入口 |
-| `config/` | 通用暂停示例；不包含操作者现用参数、账户或币池 |
-| `archive/` | 旧交易框架、旧预测流程和旧说明的历史参考；不安装、不部署，不作为运行入口 |
+| 周期预测与父综合 | 调度器确认哪些周期需要更新 → 同币种一轮分析并行更新所需子周期、复用其余有效结果 → 父Agent统一综合 → 程序校验并保存预测与交易意图。父综合读取有效子报告，必要时回看其冻结证据，不另抓一套父行情 |
+| 逐分钟验证与评分 | 后续分钟行情＋已发布预测 → 程序判断触发、目标、失效、期限及数据质量 → 追加评分修订；确认需要重分析时通知调度器更新相应周期。这里不调用模型逐分钟重算全部预测 |
+| 模型复盘与知识更新 | 历史预测＋原输入/可追溯证据＋评分，另加复盘时点行情 → 复盘Agent提出知识修订 → 程序验证并追加知识版本 → 更新检索索引，供未来预测使用 |
+| 程序验证预测期限 | 预测样本 → 配对回放 → 后续影子验证 → 按规则生效或回滚期限版本。这是确定性学习程序，与模型提出知识建议分别运行 |
 
-父 Agent 输出交易意图；程序验证预测有效性、持仓绑定和现有风控后处理执行。
-模型不能调用订单接口或提高风险上限。预测到期不自动平仓。
-PostgreSQL 保存正式预测、评分、交易与审计事实；SQLite/FTS5 是可重建的知识检索投影。
-历史表、迁移和历史查询保持原义，清理目录不会删除历史数据。
+知识按 summary（摘要）、content（正文与案例）、procedure（操作步骤）组织。
+后续知识与期限版本不改写已发布预测、原输入或历史评分。
+
+### 4. 风控：交易意图＋行情与账户状态 → 允许/拒绝及交易参数
+
+- **执行资格检查**：意图是否仍有效、当前父结论是否可用、持仓身份是否匹配、账户是否熔断或暂停。
+- **风险参数与额度检查**：沿用原有趋势/区间参数，计算仓位、杠杆、止损止盈并检查账户限制。
+  新闻/社媒风险按原配置开关，在准备订单时作为额外风险输入；它不替代父Agent决定方向。
+- **持仓风险监测**：成交后的账户与持仓持续接受止损止盈、移动/区间退出及结构失效检查，
+  必要时产生绑定该持仓的平仓意图。预测单纯到期继续现有退出监测，不直接平仓。
+
+模型提出开多、开空、观望或平仓意图；最终参数与执行许可由程序决定。
+模型不能调用订单接口或提高风险上限。
+
+### 5. 订单执行与记账：获准意图 → 订单状态 → 已确认成交 → 账户与持仓
+
+- **订单流程**：保存准备/发送状态 → 调用传输适配器 → 查询成交、部分成交、撤销或结果未知。
+  发送结果不明时核对原订单，不盲目重新下单。
+- **传输适配器**：PaperTransport 生成可重现的模拟成交；代码另保留OKX适配器。
+  公开示例保持暂停并关闭执行；使用实盘适配器需要独立配置、授权和验收。
+- **成交记账**：只把确认的增量成交应用到账户和持仓，防止重复记账；更新后的状态回到风控监测。
+  订单状态和需要通知的执行事件进入通知队列。
+
+### 6. 网关、对话与通知：两条路径复用既有Hermes接入
+
+**你主动提问时：** TG → Hermes Gateway → 主控Hermes → trading-bridge → runtime控制API。
+主控查询预测、持仓和状态，或申请解释/复盘。它与上文负责预测的父Agent是不同角色。
+
+**程序主动通知时：** 需要通知的事件 → outbox队列 → Notifier/HermesSender →
+按用途选择主控或预测Profile → 对应TG。它复用既有接入，不另建网关，也不要求模型自行发消息。
+系统启动、系统健康检查和账户/执行通知走主控；配置独立预测通知目标后，预测Bot只接收父综合结果（含HOLD）和错误告警。
+每次父综合发一条结论在前的摘要；子周期结果、目标达成、到期、失效、歧义及分析恢复成功仅留后台记录。
+主控主动申请的解释/复盘仍回复主控。通知结果未知时保留记录并停止自动重发。
+
+## 公共支撑与代码所在位置
+
+| 公共支撑 | 负责什么、供谁使用 |
+| --- | --- |
+| runtime运行编排与jobs任务管理 | 组装上述服务；调度、任务执行、通知、恢复四个循环驱动工作。任务领取、授权、租约、实例归属和超时保护供各业务模块共用；“任务执行”包含预测/复盘等工作，并非只指下单 |
+| 模型运行与隔离 | AgentRunner调用独立预测Hermes；研究插件提供任务数据、知识检索和正式提交工具；Cube承接受限终端。业务规则在预测/复盘服务，模型进程与资源生命周期在运行支撑层 |
+| 存储、检索与运维 | PostgreSQL保存行情、预测、评分、知识、意图、成交和审计事实；SQLite/FTS5仅用于可重建的知识检索。迁移、最小权限、备份和健康检查围绕这套事实库工作 |
+
+业务模块说明“系统做什么”，下面三个代码包说明“实现放在哪里”。同一业务模块可能跨包调用：
+
+| 目录 | 在当前流程中的位置 |
+| --- | --- |
+| `trading-agent/` | 唯一runtime，负责上述业务服务的组织、任务/API、事实保存、模型调用与通知；入口为 `ta --config <配置文件> serve` |
+| `packages/trading-core/` | runtime调用的共享风控参数、风险评估、记账与退出规则，以及交易查询/发送和社媒风险组件；没有第二个业务调度器 |
+| `packages/trading-quant/` | 指标与结构几何公式，由runtime的行情/特征适配层调用；不负责模型、账户或订单 |
+| `config/` | 通用暂停示例；不包含操作者现用参数、账户或币池；字段名 `legacy_config_dir` 用于指向这组配置 |
+| `archive/` | 历史源码和资料，不安装、不部署、不作为当前运行入口 |
+
+当前有些职责仍集中在同一个类中：`PredictionService`同时涉及冻结、发布、验证和意图创建；
+`ExecutionService`串联资格检查、风控调用、订单状态和记账；`Runtime`负责组装及任务分派。
+这份地图明确现有连接，不代表这些职责已被拆成独立组件。
+
+<details>
+<summary>需要改代码时，从哪里进入：实现与对应测试</summary>
+
+| 要改的功能 | 主要实现入口 | 对应测试入口 |
+| --- | --- | --- |
+| 行情读取、只读权限和外部观测 | [OKXClient](trading-agent/src/trading_agent/market/okx.py)、[只读适配器](trading-agent/src/trading_agent/market/authenticated.py)、[观测解析](trading-agent/src/trading_agent/market/observations.py) | [行情客户端](trading-agent/tests/unit/test_prediction_market_client.py)、[只读权限](trading-agent/tests/unit/test_authenticated_market.py) |
+| 逐笔分钟聚合、补抓与断点 | [TradeMinuteCollector](trading-agent/src/trading_agent/market/trade_collector.py)、[逐笔校验](trading-agent/src/trading_agent/market/trades.py)、[断点保存](trading-agent/src/trading_agent/storage/trade_checkpoints.py)、[周期聚合窗口](trading-agent/src/trading_agent/storage/trades.py) | [分钟聚合](trading-agent/tests/integration/test_trade_minutes.py)、[断点恢复](trading-agent/tests/integration/test_trade_checkpoints.py) |
+| 强平样本与固定篮子 | [LiquidationSampler](trading-agent/src/trading_agent/market/liquidations.py)、[篮子行情](trading-agent/src/trading_agent/market/breadth.py) | [强平采样](trading-agent/tests/integration/test_liquidation_sampler.py)、[市场宽度](trading-agent/tests/unit/test_breadth.py) |
+| 指标、结构及30＋1模型输入 | [指标公式](packages/trading-quant/src/trading_quant/features.py)、[结构公式](packages/trading-quant/src/trading_quant/structures.py)、[冻结输入](trading-agent/src/trading_agent/prediction/service.py)、[模型序列化](trading-agent/src/trading_agent/prediction/submissions.py) | [共享量化](tests/test_shared_quantitative.py)、[未收盘快照](trading-agent/tests/integration/test_forming_candle_inputs.py)、[模型输入](trading-agent/tests/integration/test_model_candle_payload.py) |
+| 周期更新、并行子分析和父综合 | [PredictionScheduler](trading-agent/src/trading_agent/prediction/scheduler.py)、[AnalysisRounds](trading-agent/src/trading_agent/prediction/rounds.py)、[父输入组织](trading-agent/src/trading_agent/prediction/synthesis.py)、[结构提示词](trading-agent/prompts/structural) | [分析轮次](trading-agent/tests/integration/test_analysis_rounds.py)、[父综合](trading-agent/tests/integration/test_parent_synthesis.py) |
+| 预测验证、评分与结构监测 | [行情与验证协调](trading-agent/src/trading_agent/prediction/market.py)、[评分规则](trading-agent/src/trading_agent/prediction/evaluation.py) | [预测验证](trading-agent/tests/unit/test_structure_predictions.py)、[行情验证流程](trading-agent/tests/integration/test_prediction_market.py) |
+| 复盘案例、知识版本与检索 | [KnowledgeService](trading-agent/src/trading_agent/knowledge/service.py)、[案例输入](trading-agent/src/trading_agent/knowledge/review_inputs.py)、[KnowledgeIndex](trading-agent/src/trading_agent/knowledge/index.py) | [预测知识](trading-agent/tests/integration/test_prediction_knowledge.py)、[复盘行情](trading-agent/tests/integration/test_review_market_windows.py) |
+| 期限回放、影子验证与回滚 | [HorizonService](trading-agent/src/trading_agent/prediction/horizons.py) | [期限流水线](trading-agent/tests/integration/test_horizon_pipeline.py) |
+| 风控参数、社媒风险和执行资格 | [PredictionRiskAdapter](packages/trading-core/src/trading_core/prediction_adapter.py)、[RiskEngine](packages/trading-core/src/trading_core/risk/engine.py)、[参数公式](packages/trading-core/src/trading_core/strategy/risk_parameters.py)、[配置与社媒输入](trading-agent/src/trading_agent/execution/settings.py)、[ExecutionService](trading-agent/src/trading_agent/execution/service.py) | [预测风控](tests/test_prediction_risk_adapter.py)、[风险检查](tests/test_risk.py)、[预测执行](trading-agent/tests/integration/test_prediction_execution.py) |
+| 订单状态、模拟传输和成交记账 | [ExecutionService](trading-agent/src/trading_agent/execution/service.py)、[传输适配器](trading-agent/src/trading_agent/execution/transport.py)、[AccountBook](packages/trading-core/src/trading_core/accounting.py) | [预测执行](trading-agent/tests/integration/test_prediction_execution.py)、[账户记账](tests/test_accounting_core.py)、[订单幂等](tests/test_order_idempotency.py) |
+| TG主控查询与任务请求 | [trading-bridge](trading-agent/integrations/hermes/trading-bridge/__init__.py)、[控制API](trading-agent/src/trading_agent/api/controller.py)、[预测API](trading-agent/src/trading_agent/api/prediction.py) | [主控桥接](trading-agent/tests/integration/test_controller_bridge.py)、[预测API](trading-agent/tests/integration/test_prediction_api.py) |
+| 主动通知、领取和发送确认 | [outbox与HermesSender](trading-agent/src/trading_agent/notifications/outbox.py)、[分析错误事件](trading-agent/src/trading_agent/prediction/rounds.py)、[执行事件](trading-agent/src/trading_agent/execution/service.py) | [通知队列](trading-agent/tests/integration/test_outbox.py)、[健康通知](trading-agent/tests/integration/test_doctor.py) |
+| 运行编排、任务授权与模型隔离 | [组装入口](trading-agent/src/trading_agent/runtime/factory.py)、[Runtime](trading-agent/src/trading_agent/runtime/lifecycle.py)、[JobService](trading-agent/src/trading_agent/jobs/service.py)、[AgentRunner](trading-agent/src/trading_agent/runtime/agent_runner.py)、[Cube资源](trading-agent/src/trading_agent/runtime/sandboxes.py) | [结构运行](trading-agent/tests/integration/test_structural_runtime.py)、[任务授权](trading-agent/tests/integration/test_jobs.py)、[模型进程](trading-agent/tests/integration/test_prediction_runner.py)、[Cube生命周期](trading-agent/tests/integration/test_cube_lifecycle.py) |
+
+这里只列维护入口，不把用例文件的存在当作本轮测试已通过。字段、风控与使用细节见
+[实现与使用](docs/prediction-driven-implementation.md)；已开发、已部署和线上验收需分别查证。
+
+</details>
 
 ## 可能存在的问题：逐笔成交与分钟聚合
 
 OKX 已通过用户提供的客服回复确认主动成交统计接口存在数据问题，尚未完成修复验收。
 本地已实现使用公开历史逐笔生成分钟买卖聚合，由确定性代码采集、检测及补抓，Agent 只读取
-结果和质量标记。分钟聚合长期保存，原始逐笔默认压缩留存24小时；实现和实际部署验收分别记录。
+结果和质量标记。分钟聚合长期保存，原始逐笔默认压缩留存24小时。
+[断点续抓修复](docs/cvd-checkpoint-repair-2026-11-04.md)增加分页恢复、预算暂停、轮转调度
+与真实窗口覆盖状态；长窗口完整覆盖仍需独立验证，组件测试通过不等于源数据完整或方向正确。
 实现、默认配置与验证边界见[分钟聚合交付说明](docs/trade-minute-aggregation-2026-11-03.md)。
 
 - **可能漏数或重复计数**：分页边界、断线、重复交易 ID、迟到或源端修订都可能影响聚合。

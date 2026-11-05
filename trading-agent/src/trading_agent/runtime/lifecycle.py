@@ -17,6 +17,7 @@ from trading_agent.execution.settings import load_execution
 from trading_agent.jobs.service import JobService
 from trading_agent.knowledge.service import KnowledgeService
 from trading_agent.notifications.outbox import HermesSender, Notifier, enqueue, is_context_refresh
+from trading_agent.notifications.routing import prediction_target
 from trading_agent.prediction.horizons import HorizonService
 from trading_agent.prediction.market import PredictionMarket
 from trading_agent.prediction.rounds import AnalysisRounds, coordinated
@@ -202,6 +203,16 @@ class Runtime:
                 await self.sampler.start()
             if self.trade_collector:
                 await self.trade_collector.start()
+            async with self.database.transaction() as connection:
+                await self.ownership.guard(connection)
+                await enqueue(
+                    connection,
+                    key=f"runtime-started:{self.ownership.instance_id}",
+                    target=self.config.notification.target,
+                    body="交易程序已启动，后台任务已就绪。\n"
+                    "预测是否可用、数据是否齐全及账户风控状态请分别查询；本通知不表示允许开仓。",
+                    now=await self.database.now(connection),
+                )
             for name, action in {
                 "scheduler": self.scheduler.tick,
                 "executor": self.execute_tick,
@@ -319,12 +330,17 @@ class Runtime:
         )
         loops = {}
         for name, state in self.loops.items():
+            stale_after = state.period * self.config.runtime.loop_stale_multiplier
+            if name == "notifier":
+                stale_after += (
+                    self.config.notification.send_timeout_seconds
+                    + 2 * self.config.runtime.kill_grace_seconds
+                )
             healthy = (
                 state.task is not None
                 and not state.task.done()
                 and state.failure_code is None
-                and now - state.last_progress
-                <= state.period * self.config.runtime.loop_stale_multiplier
+                and now - state.last_progress <= stale_after
             )
             checks[name] = healthy
             loops[name] = {
@@ -427,6 +443,15 @@ class Runtime:
         except DomainError as exc:
             await self._failure(attempt, exc)
         except (OSError, sa.exc.SQLAlchemyError):
+            logger.error(
+                "job_dependency_failed",
+                extra={
+                    "job_id": str(attempt.job_id),
+                    "attempt_id": str(attempt.id),
+                    "error_code": "DEPENDENCY_UNAVAILABLE",
+                },
+                exc_info=True,
+            )
             await self._failure(
                 attempt, DomainError("DEPENDENCY_UNAVAILABLE", "任务依赖暂不可用", 503)
             )
@@ -611,13 +636,31 @@ class Runtime:
                     and not successor
                     and not superseded
                 ):
+                    prediction_failure = attempt.kind in {
+                        "PREDICT_PARENT",
+                        "PREDICT_TIMEFRAME",
+                        "PREDICT_REVIEW",
+                    }
+                    if prediction_failure:
+                        from trading_agent.notifications.predictions import error_message
+
                     await enqueue(
                         connection,
                         key=f"job-failed:{attempt.job_id}:{error.code}",
-                        target=self.config.notification.target,
-                        body=f"交易任务{state}：{attempt.kind}\njob_id={attempt.job_id}\n"
+                        target=prediction_target(self.config)
+                        if prediction_failure
+                        else self.config.notification.target,
+                        body=error_message(
+                            self.config,
+                            attempt.payload.get("symbol", "预测任务"),
+                            error.code,
+                            affects_parent=False,
+                        )
+                        if prediction_failure
+                        else f"交易任务{state}：{attempt.kind}\njob_id={attempt.job_id}\n"
                         f"error_code={error.code}\n请通过主控查询任务状态。",
                         now=now,
+                        include_event_id=not prediction_failure,
                     )
             attempt_event("job_finished", attempt, delivery_status=state, error_code=error.code)
         except (DomainError, sa.exc.SQLAlchemyError):

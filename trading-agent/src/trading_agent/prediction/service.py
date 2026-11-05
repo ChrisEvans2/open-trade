@@ -25,6 +25,7 @@ from trading_agent.domain.time import INTERVAL_SECONDS, boundary
 from trading_agent.jobs.service import Attempt, JobService
 from trading_agent.market.features import compute_features, compute_provisional_features
 from trading_agent.market.models import Bar, FormingCandle, Observation
+from trading_agent.notifications import predictions as notices
 from trading_agent.prediction.contracts import (
     ParentDecision,
     PredictionReport,
@@ -940,6 +941,8 @@ class PredictionService:
             await self.jobs.guard(connection, attempt)
             if on_published:
                 await on_published(connection, prediction.id)
+            if decision:
+                await notices.published(connection, self.config, prediction, decision, now)
             return prediction.id
 
     async def queue_parent(self, connection, engine_id, symbol, now, cause=None):

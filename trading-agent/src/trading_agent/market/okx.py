@@ -113,10 +113,12 @@ class OKXClient:
         for attempt in range(self.config.retries + 1):
             await self._gate(deadline)
             retry_delay = 2**attempt
+            rate_limited = False
             try:
                 async with asyncio.timeout(self.remaining(deadline)):
                     response = await self.client.get(path, params=params)
                 if response.status_code == 429:
+                    rate_limited = True
                     header = response.headers.get("Retry-After", "1")
                     try:
                         retry_delay = max(0.0, float(header))
@@ -137,15 +139,23 @@ class OKXClient:
                         payload = response.json()
                     except ValueError as exc:
                         raise DomainError("MARKET_SCHEMA", "公共行情响应不是JSON", 503) from exc
-                    if not isinstance(payload, dict) or str(payload.get("code")) != "0":
+                    if isinstance(payload, dict) and str(payload.get("code")) == "50011":
+                        rate_limited = True
+                        self._blocked_until = max(
+                            self._blocked_until, time.monotonic() + retry_delay
+                        )
+                    elif not isinstance(payload, dict) or str(payload.get("code")) != "0":
                         raise DomainError("MARKET_REJECTED", "公共行情接口返回业务错误", 503)
-                    if not isinstance(payload.get("data"), list):
+                    elif not isinstance(payload.get("data"), list):
                         raise DomainError("MARKET_SCHEMA", "公共行情缺少data数组", 503)
-                    return payload["data"]
+                    else:
+                        return payload["data"]
             except (httpx.TransportError, TimeoutError):
                 pass
             if attempt < self.config.retries:
                 await self._wait(retry_delay, deadline)
+        if rate_limited:
+            raise DomainError("MARKET_RATE_LIMIT", "公共行情接口限流，稍后续抓", 503)
         raise DomainError("MARKET_UNAVAILABLE", "公共行情暂不可用", 503)
 
     async def check_clock(self, deadline: datetime):

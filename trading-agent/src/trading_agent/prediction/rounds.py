@@ -14,6 +14,8 @@ from sqlalchemy.dialects.postgresql import insert
 from trading_agent.domain.errors import DomainError
 from trading_agent.domain.time import boundary
 from trading_agent.jobs.service import Attempt, token_hash
+from trading_agent.notifications.predictions import error_message
+from trading_agent.notifications.routing import prediction_target
 from trading_agent.prediction.evaluation import condition_matches
 from trading_agent.prediction.service import instrument, scope_filter
 from trading_agent.prediction.submissions import bind_decision, bind_prediction, model_context
@@ -938,10 +940,10 @@ class AnalysisRounds:
                     c,
                     key=f"analysis-error:{scope['error_group'] or r['id']}:"
                     f"{'final' if resume is None else 'initial'}",
-                    target=self.config.notification.target,
-                    body=f"预测分析error：{r['symbol']}\nerror_code={error.code}\n旧父结论已停用；"
-                    + ("恢复已停止。" if resume is None else "将按有界退避恢复。"),
+                    target=prediction_target(self.config),
+                    body=error_message(self.config, r["symbol"], error.code, resume_at=resume),
                     now=now,
+                    include_event_id=False,
                 )
             await c.execute(
                 sa.insert(s.analysis_events).values(
@@ -1020,10 +1022,15 @@ class AnalysisRounds:
             await enqueue(
                 c,
                 key=f"analysis-error:{group}:{'final' if delay is None else 'initial'}",
-                target=self.config.notification.target,
-                body=f"预测分析error：{scope['symbol']}\nerror_code={code}\n旧父结论已停用；"
-                + ("恢复已停止。" if delay is None else "将按有界退避恢复。"),
+                target=prediction_target(self.config),
+                body=error_message(
+                    self.config,
+                    scope["symbol"],
+                    code,
+                    resume_at=now + timedelta(seconds=delay) if delay else None,
+                ),
                 now=now,
+                include_event_id=False,
             )
 
     async def summary(self, c, engine):

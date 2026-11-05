@@ -247,3 +247,48 @@ async def test_over_budget_template_is_rejected_and_owned_resource_can_be_cleane
     finally:
         await resources.close()
         await owner.release()
+
+
+async def test_confirmed_cleanup_allows_same_attempt_to_prepare_another_sandbox(database, tmp_path):
+    owner, jobs, resources, api = await resources_for(database)
+    try:
+        attempt = await new_attempt(database, jobs)
+        await resources.prepare(attempt, tmp_path)
+        secret = tmp_path / ".cube.secrets.json"
+        first = json.loads(secret.read_text())["sandbox"]["sandboxID"]
+        assert await resources.cleanup(attempt)
+        assert not secret.exists()
+        await resources.prepare(attempt, tmp_path)
+        second = json.loads(secret.read_text())["sandbox"]["sandboxID"]
+        assert second != first and set(api.items) == {second}
+        assert secret.stat().st_mode & 0o077 == 0
+        assert await resources.cleanup(attempt)
+        assert not secret.exists()
+        assert await resources.cleanup(attempt)  # idempotent cleanup
+    finally:
+        await resources.close()
+        await owner.release()
+
+
+async def test_unconfirmed_cleanup_keeps_bootstrap_until_remote_deletion_is_confirmed(
+    database, tmp_path
+):
+    owner, jobs, resources, api = await resources_for(database)
+    try:
+        attempt = await new_attempt(database, jobs)
+        await resources.prepare(attempt, tmp_path)
+        secret = tmp_path / ".cube.secrets.json"
+        original = resources._destroy
+
+        async def pending(raw):
+            return False
+
+        resources._destroy = pending
+        assert not await resources.cleanup(attempt)
+        assert secret.exists() and len(api.items) == 1
+        resources._destroy = original
+        assert await resources.cleanup(attempt)
+        assert not secret.exists() and api.items == {}
+    finally:
+        await resources.close()
+        await owner.release()

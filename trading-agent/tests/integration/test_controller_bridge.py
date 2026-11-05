@@ -196,7 +196,9 @@ async def test_controller_explanation_frozen_result_and_gateway_notification(
 
         async def wait(_timeout):
             return SimpleNamespace(
-                returncode=0, stdout=b'{"success":true,"message_id":"fixture-message"}'
+                returncode=0,
+                stdout=b'{"success":true,"message_id":"fixture-message"}',
+                truncated=False,
             )
 
         return SimpleNamespace(wait=wait)

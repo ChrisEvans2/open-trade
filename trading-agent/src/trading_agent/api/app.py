@@ -122,7 +122,9 @@ def create_app(services: APIServices | None = None, *, runtime_factory=None):
         except TimeoutError:
             response = error_response(request, "REQUEST_TIMEOUT", "请求接收超时", 408)
         except Exception:
-            logger.error("api_request_failed", extra={"request_id": request.state.request_id})
+            logger.error(
+                "api_request_failed", extra={"request_id": request.state.request_id}, exc_info=True
+            )
             response = error_response(request, "INTERNAL_ERROR", "请求暂时无法完成", 500)
         if (
             request.url.path

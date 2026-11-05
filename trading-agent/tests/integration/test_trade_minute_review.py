@@ -83,6 +83,8 @@ async def test_tight_cycle_budget_does_not_permanently_favor_first_asset(predict
     worker = collector(prediction_system)
     first = await worker.tick()
     second = await worker.tick()
+    await worker.tick()
+    await worker.tick()
     assert first["requests"] <= 5 and second["requests"] <= 5
     async with db.engine.connect() as connection:
         verified = (
@@ -117,7 +119,8 @@ async def test_due_audit_rotates_into_older_history_before_bootstrap(prediction_
                 )
                 .values(state="VERIFIED", updated_at=updated)
             )
-    plan = await worker.plan()
+    await worker.plan()
+    plan = await worker.plan()  # Every third cycle reserves first turn for a due audit.
     audit_items = [(item, audit) for item, audit in plan if audit and item["inst_id"] == BTC]
     assert len(audit_items) == 1
     assert audit_items[0][0]["open_at"] == old

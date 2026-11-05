@@ -111,7 +111,7 @@ async def test_owned_background_tick_is_bounded_and_io_is_outside_transaction(pr
     db, clock, _, _, _ = prediction_system
     collector, client = collector_for(prediction_system)
     result = await collector.tick()
-    assert result == {"requests": 7, "verified": 2, "incomplete": 0}
+    assert result == {"requests": 7, "verified": 2, "incomplete": 0, "paused": 0, "pages": 2}
     assert not any("rubik" in path for path in client.calls)
     async with db.transaction() as conn:
         assert (

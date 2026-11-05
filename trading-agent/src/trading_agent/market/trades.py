@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 
-from trading_agent.domain.errors import DomainError
+from trading_agent.domain.errors import DomainError, StaleAttempt
 from trading_agent.domain.serialization import content_hash
-from trading_agent.market.models import Observation
+from trading_agent.market.models import Bar, Observation
 from trading_agent.market.observations import number, timestamp
 
 MINUTE_SOURCE = "okx_trade_minutes:v1"
@@ -82,7 +82,19 @@ class MinuteCapture:
     candle: object | None
 
 
-async def capture_minute(client, inst, start, deadline, settings, metadata, get=None):
+async def capture_minute(
+    client,
+    inst,
+    start,
+    deadline,
+    settings,
+    metadata,
+    get=None,
+    *,
+    resume=None,
+    on_page=None,
+    page_limit=None,
+):
     get = get or client.get
     end = start + timedelta(minutes=1)
     selected, candle, totals, pages = {}, None, {}, 0
@@ -91,36 +103,74 @@ async def capture_minute(client, inst, start, deadline, settings, metadata, get=
         if start.second or start.microsecond or end > client.now():
             fail("TRADE_MINUTE_UNCLOSED")
         face = face_value(metadata, inst)
-        candles = await get(
-            "/api/v5/market/history-candles",
-            {"instId": inst, "bar": "1m", "after": str(int(end.timestamp() * 1000)), "limit": "2"},
-            deadline,
+        contract_hash = content_hash(
+            {
+                k: metadata.get(k)
+                for k in (
+                    "instId",
+                    "instType",
+                    "ctType",
+                    "settleCcy",
+                    "ctValCcy",
+                    "ctVal",
+                    "ctMult",
+                )
+            }
         )
-        matches = [
-            b
-            for row in candles
-            if (b := client.parse_bar(row, "1m", client.now(), inst_id=inst)) is not None
-            and b.open_at == start
-        ]
-        if len(matches) != 1:
-            fail("TRADE_CANDLE_UNAVAILABLE")
-        candle = matches[0]
+        if resume and resume["contract_hash"] != contract_hash:
+            fail("TRADE_CHECKPOINT_CONTRACT_CHANGED")
+        if resume:
+            candle = Bar.model_validate(resume["candle"])
+            if candle.inst_id != inst or candle.open_at != start:
+                fail("TRADE_SCOPE")
+            pages = resume["pages"]
+            complete = resume["complete"]
+        else:
+            candles = await get(
+                "/api/v5/market/history-candles",
+                {
+                    "instId": inst,
+                    "bar": "1m",
+                    "after": str(int(end.timestamp() * 1000)),
+                    "limit": "2",
+                },
+                deadline,
+            )
+            matches = [
+                b
+                for row in candles
+                if (b := client.parse_bar(row, "1m", client.now(), inst_id=inst)) is not None
+                and b.open_at == start
+            ]
+            if len(matches) != 1:
+                fail("TRADE_CANDLE_UNAVAILABLE")
+            candle = matches[0]
         seen = {}
+        for row in (resume or {}).get("rows", ()):
+            ident, at = validate_trade(row, inst, client.now())
+            if ident in seen and seen[ident] != row:
+                fail("TRADE_DUPLICATE_CONFLICT")
+            seen[ident] = row
+            if start <= at < end:
+                selected[ident] = row
         params = {
             "instId": inst,
             "type": "2",
             "after": str(int(end.timestamp() * 1000)),
             "limit": "100",
         }
-        previous_oldest = None
-        for _ in range(settings.max_pages_per_minute):
+        previous_oldest = resume["cursor"] if resume else None
+        if previous_oldest is not None:
+            params = {"instId": inst, "type": "1", "after": str(previous_oldest), "limit": "100"}
+        for _ in range(page_limit or settings.max_pages_per_minute):
+            if complete:
+                break
             data = await get(TRADE_PATH, params, deadline)
-            pages += 1
             if not data:
                 # An empty response is not proof of historical coverage, even if
                 # the partially accumulated volume happens to equal the candle.
                 fail("TRADE_SOURCE_EMPTY")
-            ids, times = [], []
+            ids, times, page_seen = [], [], {}
             if len(data) > 100:
                 fail("TRADE_PAGE_INVALID")
             for row in data:
@@ -129,21 +179,37 @@ async def capture_minute(client, inst, start, deadline, settings, metadata, get=
                 times.append(at)
                 if ident in seen and seen[ident] != row:
                     fail("TRADE_DUPLICATE_CONFLICT")
-                seen[ident] = row
-                if start <= at < end:
-                    selected[ident] = row
+                if ident in page_seen and page_seen[ident] != row:
+                    fail("TRADE_DUPLICATE_CONFLICT")
+                page_seen[ident] = row
             if ids != sorted(ids, reverse=True) or times != sorted(times, reverse=True):
                 fail("TRADE_PAGE_ORDER")
             oldest = min(ids)
             if previous_oldest is not None and oldest >= previous_oldest:
                 fail("TRADE_PAGINATION_STALLED")
-            if min(times) < start:
-                complete = True
-                break
+            # Validate the whole page before accepting any of its rows or advancing the cursor.
+            for row in data:
+                ident, at = validate_trade(row, inst, client.now())
+                seen[ident] = row
+                if start <= at < end:
+                    selected[ident] = row
+            pages += 1
+            complete = min(times) < start
+            if on_page:
+                await on_page(
+                    {
+                        "pages": pages,
+                        "cursor": oldest,
+                        "complete": complete,
+                        "contract_hash": contract_hash,
+                        "candle": candle.model_dump(mode="json", exclude_computed_fields=True),
+                    },
+                    data,
+                )
             previous_oldest = oldest
             params = {"instId": inst, "type": "1", "after": str(oldest), "limit": "100"}
         if not complete:
-            fail("TRADE_PAGE_LIMIT")
+            fail("TRADE_PAGE_SLICE" if page_limit is not None else "TRADE_PAGE_LIMIT")
         values = tuple(selected[k] for k in sorted(selected, key=int))
         totals = aggregate(values, face)
         if not verify_direction(values, face, totals):
@@ -152,6 +218,8 @@ async def capture_minute(client, inst, start, deadline, settings, metadata, get=
             fail("TRADE_CANDLE_VOLUME_MISMATCH")
         if not same_volume(candle.volume_contracts * face, candle.volume_base):
             fail("TRADE_CANDLE_UNIT_MISMATCH")
+    except StaleAttempt:
+        raise
     except (DomainError, ValueError, TypeError, KeyError, ArithmeticError) as exc:
         reason = exc.code if isinstance(exc, DomainError) else "TRADE_SOURCE_INVALID"
     values = tuple(selected[k] for k in sorted(selected, key=int))

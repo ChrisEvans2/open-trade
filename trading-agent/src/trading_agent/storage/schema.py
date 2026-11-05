@@ -14,6 +14,7 @@ from trading_agent.storage.prediction_schema import (
     OLD_JOB_KINDS,
     register,
 )
+from trading_agent.storage.trade_checkpoint_schema import register as register_trade_checkpoints
 from trading_agent.storage.trade_schema import register as register_trade_tables
 
 metadata = sa.MetaData(
@@ -655,3 +656,4 @@ IMMUTABLE_TABLES += workflow_schema.FACT_TABLES
 
 # Only the raw public cache expires; minute observations retain immutable triggers.
 globals().update(register_trade_tables(metadata))
+globals().update(register_trade_checkpoints(metadata))

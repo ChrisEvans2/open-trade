@@ -109,6 +109,18 @@ python -m trading_agent.storage.backups restore --archive /var/backups/trading-a
   hermes.trading_profile 中的预测父/子 Agent 是两个角色，不启动第二个交易 runtime。
   trading_job_create 通过 /v2/jobs 申请当前解释/复盘任务，/v1/jobs 为旧主控兼容路径；
   任务完成通知由已有 outbox 经 HermesSender 调用 controller_profile 发送至 notification.target。
+  系统启动、doctor健康异常/恢复及账户/执行通知也使用该主控目标；doctor仍须单独启用，字段存在不等于已运行。
+  配置 notification.prediction_target 后，仅父综合结果（含HOLD）与分析错误告警
+  使用 hermes.trading_profile 对应的预测Bot；须开启 trading_telegram_enabled 并与主控Profile隔离。
+  两个Bot可以发往同一用户，不能仅凭相同chat_id把它们当作同一发送身份。
+  发送队列在target中保存 `hermes-profile:<profile>:<platform-target>` 路由，旧普通target保持主控语义，
+  不改写历史消息目标。子周期结果、目标达成、到期、失效、歧义和分析恢复成功均静默，状态与评分照常保存。
+  旧待发prediction-ended/analysis-recovered标记NOTIFICATION_DISABLED，保留正文及投递历史；SENT/UNKNOWN不重发。
+  父摘要和错误正文不显示预测/事件编号，后台保留关联键。未配置prediction_target时保留旧告警路由，不新增正常结果推送。
+  send_timeout_seconds默认30秒，允许10–60秒；旧配置显式10秒须随部署更新。
+  每次只领取可并发的4条，事务外投递前复核归属和租约，120秒领取期限不变。
+  Hermes没有提供可验证拒收类型的error、部分发送和丢失回执均保留UNKNOWN，不自动重发；
+  命令无法启动等确认未发送的失败仍有界重试。单次预算及清理时间内的投递不被健康检查误判为循环停滞。
   trading_status、trading_positions 和预测/任务/复盘查询供主控解释事实；不赋予订单或风险修改权限。
   申请/结果闭环与验证边界见[恢复说明](../../docs/controller-hermes-restore-2026-10-22.md)。
 - `hermes.trading_telegram_enabled`默认false。需要独立预测Bot时使用与主控不同的Token，
@@ -119,6 +131,10 @@ python -m trading_agent.storage.backups restore --archive /var/backups/trading-a
   本机接入与真实验证见[独立预测TG说明](../../docs/prediction-telegram-2026-10-23.md)。
 - Cube SDK0.7数据面只接受127.0.0.1代理，模板的GET详情必须返回cpuCount/memoryMB/diskSizeMB，
   均为正数且不超配置上限；缺字段/超额拒绝。资源容量在模板确定，不假装runtime能动态修改模板。
+  协调轮次的沙箱续期受持久化整轮期限、任务令牌和调用方剩余时间共同约束，不再套用普通任务的150秒总预算。
+  每个子周期及父综合仍单独受120秒执行期限、150秒阶段上限约束，整轮仍最长1200秒，恢复次数不变。
+  确认旧沙箱已回收后，同时移除该次本地bootstrap，才可在同一attempt下重新准备；回收未确认时保留文件并隔离名额。
+  这不更换模型、不放宽边界/证据校验。依赖和API意外失败日志仅补异常类型与函数栈，不记录异常正文或凭据。
 - 沙箱准备总预算20秒，并受首次模型T+2分钟开始约束；准备耗时也可能使时段跳过，必须在线测量。
 - runtime拒绝人工token与迁移/备份/恢复凭据；.env.example是分环境参考列表，不能全部source到runtime。
 - `ta status --json`包含24小时运行统计与计量覆盖；parent usage为提交前最后采样。

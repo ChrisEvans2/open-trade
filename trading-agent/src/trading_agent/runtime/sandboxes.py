@@ -143,6 +143,7 @@ class CubeResources:
             timeout=httpx.Timeout(config.sandbox.management_timeout_seconds, connect=3),
         )
         self.records = {}
+        self.bootstrap_files = {}
 
     async def request(self, method, path, payload=None, *, missing=False):
         try:
@@ -187,6 +188,7 @@ class CubeResources:
             )
 
     async def prepare(self, attempt, root):
+        self.bootstrap_files[attempt.id] = root / ".cube.secrets.json"
         metadata = self.metadata(attempt)
         await self._record(attempt, {"status": "CREATING", "metadata": metadata})
         payload = {
@@ -354,7 +356,13 @@ class CubeResources:
             limits = [remaining_seconds, (record["token_expires_at"] - now).total_seconds()]
             if job["deadline_at"] is not None:
                 limits.append((job["deadline_at"] - now).total_seconds())
-            if record["model_started_at"] is not None:
+            # A coordinator includes child preparation, parallel analysis and
+            # bounded retries. Its durable round/token deadlines govern renewal;
+            # each role's 120s execution deadline is supervised separately.
+            coordinator = attempt.payload.get("analysis_round") and not attempt.payload.get(
+                "analysis_managed"
+            )
+            if record["model_started_at"] is not None and not coordinator:
                 limits.append(
                     (
                         record["model_started_at"]
@@ -406,6 +414,8 @@ class CubeResources:
                     sa.select(s.job_attempts.c.sandbox_ref).where(s.job_attempts.c.id == attempt.id)
                 )
             if not record or record.get("status") == "CLEANED":
+                if record:
+                    await self._clear_bootstrap(attempt)
                 return True
             if not record.get("sandbox_id"):
                 # Recovery searches metadata again, including responses arriving after a timeout.
@@ -422,9 +432,21 @@ class CubeResources:
                 },
                 expired=True,
             )
+            if cleaned:
+                await self._clear_bootstrap(attempt)
             return cleaned
         except DomainError:
             return False
+
+    async def _clear_bootstrap(self, attempt):
+        # Only confirmed remote cleanup permits a fresh launch's local secrets.
+        # Keep O_EXCL in prepare: an unconfirmed old sandbox cannot be overwritten.
+        path = self.bootstrap_files.get(
+            attempt.id,
+            self.config.runtime.data_dir / "attempts" / str(attempt.id) / ".cube.secrets.json",
+        )
+        await asyncio.to_thread(path.unlink, missing_ok=True)
+        self.bootstrap_files.pop(attempt.id, None)
 
     async def recover(self):
         sandboxes = await self.request("GET", "/sandboxes")

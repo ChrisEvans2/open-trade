@@ -5,6 +5,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
+from time import monotonic
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
@@ -12,23 +13,25 @@ from sqlalchemy.dialects.postgresql import insert
 
 from trading_agent.config import AppConfig
 from trading_agent.domain.serialization import content_hash
+from trading_agent.notifications.routing import destination
 from trading_agent.runtime.processes import ManagedProcess, safe_environment
 from trading_agent.storage import schema as s
 
 logger = logging.getLogger(__name__)
 
 CONTEXT_REFRESH_CODES = {"CONTEXT_EXPIRED", "CONTEXT_CHANGED", "POSITION_CHANGED"}
+DELIVERY_CONCURRENCY = 4
 
 
 def is_context_refresh(kind, code):
     return kind in {"PREDICT_PARENT", "PREDICT_TIMEFRAME"} and code in CONTEXT_REFRESH_CODES
 
 
-async def enqueue(connection, *, key, target, body, now) -> UUID | None:
+async def enqueue(connection, *, key, target, body, now, include_event_id=True) -> UUID | None:
     if target is None:
         return None
     event_id = content_hash(key)[:12]
-    complete = f"{body}\n[event:{event_id}]"
+    complete = f"{body}\n[event:{event_id}]" if include_event_id else body
     ident = await connection.scalar(
         insert(s.outbox)
         .values(
@@ -65,17 +68,22 @@ class HermesSender:
 
     async def send(self, target: str, body: str) -> Delivery:
         hermes = self.config.hermes
-        if hermes.executable is None or hermes.controller_profile is None:
+        if hermes.executable is None:
             return Delivery("FAILED", error_code="NOTIFICATION_NOT_CONFIGURED")
+        try:
+            profile, target = destination(self.config, target)
+        except ValueError as error:
+            return Delivery("FAILED", error_code=str(error))
         env = safe_environment()
         if hermes.home:
             env["HERMES_HOME"] = str(hermes.home.resolve())
+        started = monotonic()
         try:
             process = await ManagedProcess.start(
                 [
                     str(hermes.executable),
                     "-p",
-                    hermes.controller_profile,
+                    profile,
                     "send",
                     "--to",
                     target,
@@ -87,9 +95,20 @@ class HermesSender:
                 input_bytes=body.encode(),
                 kill_grace=self.config.runtime.kill_grace_seconds,
             )
-            result = await process.wait(self.config.notification.send_timeout_seconds)
-        except (TimeoutError, OSError):
-            return Delivery("UNKNOWN", error_code="SEND_TIMEOUT_OR_PROCESS_ERROR")
+        except (FileNotFoundError, PermissionError):
+            # No child exists, so no remote delivery could have happened.
+            return Delivery("FAILED", error_code="SEND_PROCESS_START_FAILED")
+        except OSError:
+            return Delivery("UNKNOWN", error_code="SEND_START_UNCONFIRMED")
+        try:
+            remaining = self.config.notification.send_timeout_seconds - (monotonic() - started)
+            result = await process.wait(max(0, remaining))
+        except TimeoutError:
+            return Delivery("UNKNOWN", error_code="SEND_TIMEOUT")
+        except OSError:
+            return Delivery("UNKNOWN", error_code="SEND_PROCESS_ERROR")
+        if result.truncated:
+            return Delivery("UNKNOWN", error_code="UNRECOGNIZED_SEND_RESPONSE")
         try:
             payload = json.loads(result.stdout)
         except (ValueError, TypeError):
@@ -100,11 +119,14 @@ class HermesSender:
             and payload.get("success") is True
             and not payload.get("error")
             and not payload.get("skipped")
+            and not payload.get("partial_success")
         ):
             message_id = payload.get("message_id")
             return Delivery("SENT", message_id=str(message_id) if message_id is not None else None)
-        if isinstance(payload, dict) and payload.get("error"):
-            return Delivery("FAILED", error_code="TRANSPORT_REJECTED")
+        if isinstance(payload, dict) and (payload.get("error") or payload.get("partial_success")):
+            # Hermes' untyped error can mean a lost receipt or partial chunk send.
+            # It does not prove that the remote rejected the whole message.
+            return Delivery("UNKNOWN", error_code="SEND_UNCONFIRMED")
         return Delivery("UNKNOWN", error_code="UNRECOGNIZED_SEND_RESPONSE")
 
 
@@ -116,13 +138,27 @@ class Notifier:
             sender,
             config,
         )
-        self.semaphore = asyncio.Semaphore(4)
+        self.semaphore = asyncio.Semaphore(DELIVERY_CONCURRENCY)
         self.on_progress = on_progress or (lambda: None)
 
     async def claim(self):
         async with self.database.transaction() as connection:
             await self.ownership.guard(connection)
             now = await self.database.now(connection)
+            # The prediction channel now carries parent summaries and errors only.
+            # Retire unsent notices from the old policy; preserve uncertain and
+            # confirmed deliveries, their payloads and attempt history.
+            await connection.execute(
+                sa.update(s.outbox)
+                .where(
+                    sa.or_(
+                        s.outbox.c.event_key.startswith("prediction-ended:"),
+                        s.outbox.c.event_key.startswith("analysis-recovered:"),
+                    ),
+                    s.outbox.c.status.in_(("PENDING", "RETRY_WAIT")),
+                )
+                .values(status="FAILED", last_error="NOTIFICATION_DISABLED")
+            )
             # Retire queued notices from older runtimes without deleting their
             # event/body/attempt history. Context refresh is automatic recovery.
             obsolete = sa.select(
@@ -172,7 +208,8 @@ class Notifier:
                         )
                         .order_by(s.outbox.c.next_attempt_at)
                         .with_for_update(skip_locked=True)
-                        .limit(20)
+                        # Do not lease messages that will wait behind other sends.
+                        .limit(DELIVERY_CONCURRENCY)
                     )
                 )
                 .mappings()
@@ -259,8 +296,24 @@ class Notifier:
 
     async def _deliver(self, claim):
         async with self.semaphore:
+            async with self.database.transaction() as connection:
+                await self.ownership.guard(connection)
+                now = await self.database.now(connection)
+                current = await connection.scalar(
+                    sa.select(s.outbox.c.id).where(
+                        s.outbox.c.id == claim["id"],
+                        s.outbox.c.status == "SENDING",
+                        s.outbox.c.claim_id == claim["claim_id"],
+                        s.outbox.c.lease_until > now,
+                    )
+                )
+            if current is None:
+                return
             try:
-                async with asyncio.timeout(self.config.notification.send_timeout_seconds):
+                # The sender owns its deadline. Leave bounded process cleanup time
+                # before this outer guard; equal nested timers discarded valid receipts.
+                cleanup = 2 * self.config.runtime.kill_grace_seconds
+                async with asyncio.timeout(self.config.notification.send_timeout_seconds + cleanup):
                     result = await self.sender.send(claim["target"], claim["body"])
             except TimeoutError:
                 result = Delivery("UNKNOWN", error_code="SEND_TIMEOUT")

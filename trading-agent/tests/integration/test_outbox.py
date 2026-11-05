@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -13,6 +14,62 @@ from trading_agent.runtime.lifecycle import Runtime
 from trading_agent.storage import schema as s
 
 pytestmark = pytest.mark.postgres
+
+
+async def test_disabled_status_notices_retire_but_summaries_errors_and_system_still_send(
+    prediction_system,
+):
+    db, clock, jobs, predictions, _ = prediction_system
+    originals = {}
+    async with db.transaction() as c:
+        for prefix in ("prediction-ended:", "analysis-recovered:"):
+            for status in ("PENDING", "RETRY_WAIT", "UNKNOWN", "SENT"):
+                ident = await enqueue(
+                    c,
+                    key=prefix + status,
+                    target="fixture",
+                    body="historical status",
+                    now=clock.value,
+                )
+                await c.execute(
+                    sa.update(s.outbox)
+                    .where(s.outbox.c.id == ident)
+                    .values(
+                        status=status,
+                        attempts=0 if status == "PENDING" else 2,
+                        last_error="SEND_TIMEOUT" if status == "UNKNOWN" else None,
+                        transport_message_id="old-id" if status == "SENT" else None,
+                    )
+                )
+                originals[ident] = (
+                    (await c.execute(sa.select(s.outbox).where(s.outbox.c.id == ident)))
+                    .mappings()
+                    .one()
+                )
+        for key in (
+            "prediction-published:parent",
+            "analysis-error:incident:initial",
+            "runtime-started:instance",
+        ):
+            await enqueue(c, key=key, target="fixture", body="allowed message", now=clock.value)
+    sender = SimpleNamespace(send=AsyncMock(return_value=Delivery("SENT", "new-id")))
+    notifier = Notifier(db, jobs.ownership, sender, predictions.config)
+    await notifier.tick()
+    await notifier.tick()
+    assert sender.send.await_count == 3
+    async with db.engine.connect() as c:
+        rows = (await c.execute(sa.select(s.outbox))).mappings().all()
+        for row in rows:
+            if row["id"] not in originals:
+                assert row["status"] == "SENT"
+                continue
+            old = originals[row["id"]]
+            assert row["body"] == old["body"] and row["target"] == old["target"]
+            assert row["created_at"] == old["created_at"] and row["attempts"] == old["attempts"]
+            if old["status"] in {"PENDING", "RETRY_WAIT"}:
+                assert row["status"] == "FAILED" and row["last_error"] == "NOTIFICATION_DISABLED"
+            else:
+                assert dict(row) == dict(old)
 
 
 async def test_outbox_event_dedupe_expired_claim_is_unknown_and_never_resent(prediction_system):
@@ -231,3 +288,70 @@ async def test_delivered_message_with_lost_receipt_is_not_sent_again(prediction_
         row = (await connection.execute(sa.select(s.outbox))).mappings().one()
         assert row["status"] == "UNKNOWN" and row["attempts"] == 1
         assert row["transport_message_id"] is None
+
+
+async def test_claims_only_immediately_sendable_batch_and_checks_lease_before_io(prediction_system):
+    database, clock, jobs, predictions, _ = prediction_system
+    sender = SimpleNamespace(send=AsyncMock(return_value=Delivery("SENT", "fixture")))
+    notifier = Notifier(database, jobs.ownership, sender, predictions.config)
+    async with database.transaction() as connection:
+        for number in range(9):
+            await enqueue(
+                connection, key=f"batch:{number}", target="fixture", body="fixture", now=clock.value
+            )
+    claims = await notifier.claim()
+    assert len(claims) == 4
+    async with database.engine.connect() as connection:
+        assert (
+            await connection.scalar(
+                sa.select(sa.func.count())
+                .select_from(s.outbox)
+                .where(s.outbox.c.status == "PENDING")
+            )
+            == 5
+        )
+    clock.value += timedelta(seconds=121)
+    await notifier._deliver(claims[0])
+    sender.send.assert_not_awaited()
+    await notifier.tick()
+    assert sender.send.await_count == 4
+    async with database.engine.connect() as connection:
+        assert (
+            await connection.scalar(
+                sa.select(sa.func.count())
+                .select_from(s.outbox)
+                .where(s.outbox.c.status == "UNKNOWN")
+            )
+            == 4
+        )
+    await notifier.tick()
+    assert sender.send.await_count == 5
+
+
+async def test_sender_cleanup_can_finish_after_send_budget_without_losing_receipt(
+    prediction_system,
+):
+    database, clock, jobs, predictions, _ = prediction_system
+    # Scale time only in this test: transport result exists at its deadline,
+    # then bounded process cleanup takes time before send() returns the receipt.
+    config = predictions.config.model_copy(
+        update={
+            "notification": predictions.config.notification.model_copy(
+                update={"send_timeout_seconds": 0.03}
+            ),
+            "runtime": predictions.config.runtime.model_copy(update={"kill_grace_seconds": 0.1}),
+        }
+    )
+
+    class CleanupSender:
+        async def send(self, target, body):
+            await asyncio.sleep(0.06)
+            return Delivery("SENT", "confirmed-before-cleanup")
+
+    async with database.transaction() as connection:
+        await enqueue(connection, key="cleanup", target="fixture", body="fixture", now=clock.value)
+    await Notifier(database, jobs.ownership, CleanupSender(), config).tick()
+    async with database.engine.connect() as connection:
+        row = (await connection.execute(sa.select(s.outbox))).mappings().one()
+        assert row["status"] == "SENT"
+        assert row["transport_message_id"] == "confirmed-before-cleanup"

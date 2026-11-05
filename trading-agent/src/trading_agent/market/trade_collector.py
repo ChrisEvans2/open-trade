@@ -19,11 +19,16 @@ from trading_agent.market.observations import timestamp
 from trading_agent.market.trades import MINUTE_SOURCE, capture_minute, face_value
 from trading_agent.storage import schema as s
 from trading_agent.storage.market import persist_bar, persist_observation
+from trading_agent.storage.trade_checkpoints import clear_checkpoint, load_checkpoint, save_page
+from trading_agent.storage.trades import coverage_status
+
+PAUSED = {"MARKET_DEADLINE", "TRADE_CYCLE_BUDGET", "TRADE_PAGE_SLICE"}
 
 TRANSIENT = {
     "MARKET_UNAVAILABLE",
     "MARKET_DEADLINE",
     "MARKET_REJECTED",
+    "MARKET_RATE_LIMIT",
     "TRADE_CYCLE_BUDGET",
     "TRADE_SOURCE_EMPTY",
     "TRADE_CANDLE_UNAVAILABLE",
@@ -43,6 +48,8 @@ class TradeMinuteCollector:
         self.failure_code = None
         self.last_cycle = {}
         self._rotation = 0
+        self.coverage = {}
+        self._coverage_at = None
 
     async def start(self):
         self.task = asyncio.create_task(self.run(), name="trade-minute-collector")
@@ -59,12 +66,15 @@ class TradeMinuteCollector:
             "failure_code": self.failure_code,
             "last_progress": self.last_progress.isoformat() if self.last_progress else None,
             "last_cycle": self.last_cycle,
+            "coverage": self.coverage,
         }
 
     async def run(self):
         while True:
+            busy = False
             try:
                 await self.tick()
+                busy = bool(self.last_cycle.get("pages") or self.last_cycle.get("verified"))
             except StaleAttempt:
                 self.failure_code = "RUNTIME_OWNERSHIP_LOST"
                 if self.on_fatal:
@@ -76,7 +86,9 @@ class TradeMinuteCollector:
                 self.failure_code = (
                     exc.code if isinstance(exc, DomainError) else "TRADE_COLLECTOR_FAILED"
                 )
-            await asyncio.sleep(self.settings.poll_seconds)
+            await asyncio.sleep(
+                self.settings.busy_poll_seconds if busy else self.settings.poll_seconds
+            )
 
     async def plan(self):
         """Only scheduling/retention writes; never network calls inside this transaction."""
@@ -88,9 +100,27 @@ class TradeMinuteCollector:
                 now - timedelta(seconds=self.settings.settle_delay_seconds), "1m"
             ) - timedelta(minutes=1)
             cutoff = latest - timedelta(days=self.settings.repair_lookback_days)
-            queues = []
+            # Old releases treated exhausted budgets as failures with exponential backoff.
+            # Requeue only that rebuildable scheduling state; retain all old observations.
+            await connection.execute(
+                sa.update(work)
+                .where(
+                    work.c.inst_id.in_(self.inst_ids),
+                    work.c.state == "ERROR",
+                    work.c.reason.in_(PAUSED),
+                    work.c.open_at > cutoff,
+                )
+                .values(
+                    state="PENDING",
+                    attempts=0,
+                    next_retry_at=now,
+                    reason="TRADE_BUDGET_REQUEUED",
+                    updated_at=now,
+                )
+            )
+            live_queues, history_queues = [], []
             audits = []
-            offset = self._rotation % len(self.inst_ids)
+            offset = (self._rotation // 2) % len(self.inst_ids)
             ordered = self.inst_ids[offset:] + self.inst_ids[:offset]
             self._rotation += 1
             for inst in ordered:
@@ -126,30 +156,48 @@ class TradeMinuteCollector:
                     )
                     .values(state="EXPIRED", reason="REPAIR_LOOKBACK_EXCEEDED", updated_at=now)
                 )
-                rows = (
-                    (
-                        await connection.execute(
-                            sa.select(work)
-                            .where(
-                                work.c.inst_id == inst,
-                                work.c.state.in_(("PENDING", "ERROR")),
-                                work.c.next_retry_at <= now,
-                                work.c.open_at > cutoff,
-                            )
-                            .order_by(
-                                sa.case(
-                                    (work.c.open_at >= latest - timedelta(minutes=2), 0), else_=1
-                                ),
-                                sa.case((work.c.state == "ERROR", 0), else_=1),
-                                work.c.open_at.desc(),
-                            )
-                            .limit(self.settings.max_minutes_per_cycle)
+                for live, queues in ((True, live_queues), (False, history_queues)):
+                    recent = work.c.open_at >= latest - timedelta(minutes=2)
+                    pending_checkpoint = sa.exists(
+                        sa.select(s.trade_minute_checkpoints.c.inst_id).where(
+                            s.trade_minute_checkpoints.c.inst_id == inst,
+                            s.trade_minute_checkpoints.c.open_at == work.c.open_at,
                         )
                     )
-                    .mappings()
-                    .all()
-                )
-                queues.append(list(rows))
+                    # Most recent complete prediction window first, not total historical count.
+                    rank = sa.case(
+                        *[
+                            (work.c.open_at >= boundary(now, tf) - timedelta(hours=hours), i)
+                            for i, (tf, hours) in enumerate(
+                                (("1h", 20), ("4h", 80), ("6h", 120), ("12h", 240))
+                            )
+                        ],
+                        else_=4,
+                    )
+                    rows = (
+                        (
+                            await connection.execute(
+                                sa.select(work)
+                                .where(
+                                    work.c.inst_id == inst,
+                                    work.c.state.in_(("PENDING", "ERROR")),
+                                    work.c.next_retry_at <= now,
+                                    work.c.open_at > cutoff,
+                                    recent if live else ~recent,
+                                )
+                                .order_by(
+                                    rank,
+                                    sa.case((pending_checkpoint, 0), else_=1),
+                                    sa.case((work.c.state == "ERROR", 0), else_=1),
+                                    work.c.open_at.desc(),
+                                )
+                                .limit(self.settings.max_minutes_per_cycle)
+                            )
+                        )
+                        .mappings()
+                        .all()
+                    )
+                    queues.append([dict(row, lane="live" if live else "history") for row in rows])
                 if now - self.last_audit.get(inst, now - timedelta(days=1)) >= timedelta(
                     minutes=self.settings.audit_interval_minutes
                 ):
@@ -163,7 +211,11 @@ class TradeMinuteCollector:
                                     work.c.open_at < latest - timedelta(minutes=5),
                                     work.c.open_at > cutoff,
                                 )
-                                .order_by(work.c.updated_at, work.c.open_at)
+                                .order_by(
+                                    sa.case((pending_checkpoint, 0), else_=1),
+                                    work.c.updated_at,
+                                    work.c.open_at,
+                                )
                                 .limit(1)
                             )
                         )
@@ -176,6 +228,16 @@ class TradeMinuteCollector:
             await connection.execute(
                 sa.delete(s.trade_raw_cache).where(s.trade_raw_cache.c.expires_at <= now)
             )
+            # In-flight pages have no 24h expiry. Only explicit repair-window expiry discards them.
+            await connection.execute(
+                sa.delete(s.trade_minute_checkpoints).where(
+                    s.trade_minute_checkpoints.c.open_at <= cutoff
+                )
+            )
+        # Rotate lane priority as well as assets, so even a very small budget cannot starve history.
+        queues = (
+            live_queues + history_queues if self._rotation % 2 else history_queues + live_queues
+        )
         due = [
             (queue[i], False)
             for i in range(self.settings.max_minutes_per_cycle)
@@ -183,7 +245,8 @@ class TradeMinuteCollector:
             if i < len(queue)
         ]
         # Rotate assets across cycles; due audits must survive a busy first minute.
-        plan = audits + due
+        # Audits get a turn every third cycle; otherwise they cannot displace recent collection.
+        plan = audits + due if self._rotation % 3 == 0 else due + audits
         return plan[: self.settings.max_minutes_per_cycle]
 
     async def tick(self):
@@ -193,7 +256,7 @@ class TradeMinuteCollector:
     async def _tick(self):
         plan = await self.plan()
         deadline = self.client.now() + timedelta(seconds=self.settings.cycle_budget_seconds)
-        requests, completed, invalid = 0, 0, 0
+        requests, completed, invalid, paused, pages = 0, 0, 0, 0, 0
 
         async def get(path, params, until):
             nonlocal requests
@@ -225,17 +288,53 @@ class TradeMinuteCollector:
                     raise DomainError("TRADE_CONTRACT_UNSUPPORTED", "逐笔合约元数据缺失", 503)
                 face_value(found[0], inst)
                 metadata[inst] = found[0]
+            resume = await load_checkpoint(self.database, inst, item["open_at"])
+
+            async def checkpoint(state, rows, inst=inst, start=item["open_at"]):
+                nonlocal pages
+                await save_page(self.database, self.ownership, inst, start, state, rows)
+                pages += 1
+                self.last_progress = self.client.now()
+
             capture = await capture_minute(
-                self.client, inst, item["open_at"], deadline, self.settings, metadata[inst], get
+                self.client,
+                inst,
+                item["open_at"],
+                min(
+                    deadline,
+                    self.client.now() + timedelta(seconds=self.settings.task_slice_seconds),
+                ),
+                self.settings,
+                metadata[inst],
+                get,
+                resume=resume,
+                on_page=checkpoint,
+                page_limit=min(self.settings.pages_per_turn, self.settings.max_pages_per_minute),
             )
             await self.record(capture, audit=audit)
-            if audit:
+            is_paused = capture.observation.payload.get("reason") in PAUSED
+            if audit and not is_paused:
                 self.last_audit[inst] = self.client.now()
             completed += capture.observation.quality == "OK"
-            invalid += capture.observation.quality != "OK"
-        self.last_progress = self.client.now()
+            paused += is_paused
+            invalid += capture.observation.quality != "OK" and not is_paused
+        if completed:
+            self.last_progress = self.client.now()
+        if self._coverage_at is None or self.client.now() - self._coverage_at >= timedelta(
+            seconds=60
+        ):
+            async with self.database.transaction() as connection:
+                now = await self.database.now(connection)
+                self.coverage = await coverage_status(connection, self.inst_ids, now)
+            self._coverage_at = self.client.now()
         self.failure_code = None
-        self.last_cycle = {"requests": requests, "verified": completed, "incomplete": invalid}
+        self.last_cycle = {
+            "requests": requests,
+            "verified": completed,
+            "incomplete": invalid,
+            "paused": paused,
+            "pages": pages,
+        }
         return self.last_cycle
 
     async def record(self, capture, *, audit=False):
@@ -254,6 +353,21 @@ class TradeMinuteCollector:
                 .mappings()
                 .first()
             )
+            reason = o.payload.get("reason")
+            if reason in PAUSED:
+                # A time slice is scheduling state, not a new market fact or an error retry.
+                if previous_work:
+                    await connection.execute(
+                        sa.update(work)
+                        .where(clause)
+                        .values(
+                            state="VERIFIED" if audit else "PENDING",
+                            reason=reason,
+                            next_retry_at=now,
+                            updated_at=now,
+                        )
+                    )
+                return
             previous = (
                 (
                     await connection.execute(
@@ -299,6 +413,8 @@ class TradeMinuteCollector:
                 )
             if not retain_verified:
                 await persist_observation(connection, o)
+            if o.quality == "OK" or reason not in TRANSIENT:
+                await clear_checkpoint(connection, o.inst_id, o.coverage_start)
             if audit:
                 prior = previous["payload"] if previous else {}
                 audit_payload = {
@@ -329,15 +445,17 @@ class TradeMinuteCollector:
                         payload=audit_payload,
                     ),
                 )
-            attempts = (previous_work["attempts"] if previous_work else 0) + 1
             valid = o.quality == "OK" or retain_verified
+            attempts = 0 if valid else (previous_work["attempts"] if previous_work else 0) + 1
             values = dict(
                 state="VERIFIED" if valid else "ERROR",
                 attempts=attempts,
                 updated_at=now,
                 next_retry_at=now
                 + timedelta(
-                    seconds=min(3600, self.settings.retry_seconds * 2 ** min(attempts - 1, 6))
+                    seconds=min(
+                        3600, self.settings.retry_seconds * 2 ** min(max(attempts - 1, 0), 6)
+                    )
                 ),
                 reason=o.payload.get("reason"),
             )

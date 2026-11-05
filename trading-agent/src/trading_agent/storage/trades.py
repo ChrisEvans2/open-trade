@@ -6,7 +6,7 @@ from decimal import Decimal
 import sqlalchemy as sa
 
 from trading_agent.domain.serialization import content_hash
-from trading_agent.domain.time import INTERVAL_SECONDS
+from trading_agent.domain.time import INTERVAL_SECONDS, boundary
 from trading_agent.market.models import Observation
 from trading_agent.market.trades import MINUTE_SOURCE
 from trading_agent.storage import schema as s
@@ -83,3 +83,54 @@ async def trade_windows(connection, inst_id, timeframe, end, decision_at):
             )
         )
     return tuple(result)
+
+
+async def coverage_status(connection, inst_ids, now):
+    """Read the same as-of minute selection used by formal prediction freezing."""
+    report = {"as_of": now.isoformat(), "instruments": {}}
+    for inst in inst_ids:
+        periods = {}
+        for tf in ("1h", "4h", "6h", "12h"):
+            end = boundary(now, tf)
+            windows = await trade_windows(connection, inst, tf, end, now)
+            expected = sum(w.payload["expected_minutes"] for w in windows)
+            verified = sum(w.payload["verified_minutes"] for w in windows)
+            periods[tf] = {
+                "start": windows[0].coverage_start.isoformat(),
+                "end": end.isoformat(),
+                "expected_minutes": expected,
+                "verified_minutes": verified,
+                "missing_minutes": expected - verified,
+                "ready": verified == expected,
+                "incomplete_intervals": [
+                    {
+                        "start": w.coverage_start.isoformat(),
+                        "end": w.coverage_end.isoformat(),
+                        "missing_minutes": w.payload["expected_minutes"]
+                        - w.payload["verified_minutes"],
+                    }
+                    for w in windows
+                    if w.quality != "OK"
+                ],
+            }
+        work = s.trade_minute_work
+        failures = (
+            (
+                await connection.execute(
+                    sa.select(work.c.open_at, work.c.reason, work.c.attempts, work.c.next_retry_at)
+                    .where(work.c.inst_id == inst, work.c.state == "ERROR")
+                    .order_by(work.c.updated_at.desc())
+                    .limit(10)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        report["instruments"][inst] = {
+            "periods": periods,
+            "recent_errors": [
+                {k: v.isoformat() if hasattr(v, "isoformat") else v for k, v in row.items()}
+                for row in failures
+            ],
+        }
+    return report

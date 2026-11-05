@@ -16,7 +16,7 @@ async def provision_app_permissions(connection: AsyncConnection, role: str):
     for name in metadata.tables:
         await connection.execute(sa.text(f'REVOKE ALL PRIVILEGES ON TABLE "{name}" FROM "{role}"'))
         privileges = "SELECT, INSERT" if name in IMMUTABLE_TABLES else "SELECT, INSERT, UPDATE"
-        if name == "trade_raw_cache":
+        if name in {"trade_raw_cache", "trade_minute_checkpoints", "trade_minute_pages"}:
             privileges += ", DELETE"
         await connection.execute(sa.text(f'GRANT {privileges} ON TABLE "{name}" TO "{role}"'))
     await connection.execute(sa.text(f'GRANT SELECT ON alembic_version TO "{role}"'))
@@ -43,7 +43,7 @@ async def verify_app_permissions(connection: AsyncConnection) -> bool:
         privileges = (
             ("SELECT", "INSERT") if name in IMMUTABLE_TABLES else ("SELECT", "INSERT", "UPDATE")
         )
-        if name == "trade_raw_cache":
+        if name in {"trade_raw_cache", "trade_minute_checkpoints", "trade_minute_pages"}:
             privileges += ("DELETE",)
         for privilege in privileges:
             if not await connection.scalar(

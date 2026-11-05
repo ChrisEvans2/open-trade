@@ -157,6 +157,11 @@ def expected_lock(config):
         "controller_profile": config.hermes.controller_profile,
         "trading_profile": config.hermes.trading_profile,
         "notification_target": config.notification.target,
+        **(
+            {"prediction_notification_target": config.notification.prediction_target}
+            if config.notification.prediction_target is not None
+            else {}
+        ),
         "bridge_settings": bridge_settings(config),
         "cube": config.sandbox.model_dump(
             mode="json", exclude={"isolation_verified", "isolation_report"}

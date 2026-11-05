@@ -23,6 +23,9 @@ class TradeMinuteConfig(StrictModel):
     bootstrap_days: int = Field(default=11, ge=1, le=30)
     repair_lookback_days: int = Field(default=30, ge=10, le=80)
     poll_seconds: int = Field(default=15, ge=5, le=60)
+    busy_poll_seconds: float = Field(default=0.25, ge=0.1, le=5)
+    pages_per_turn: int = Field(default=10, ge=1, le=100)
+    task_slice_seconds: float = Field(default=8, ge=1, le=40)
     settle_delay_seconds: int = Field(default=10, ge=5, le=120)
     cycle_budget_seconds: int = Field(default=40, ge=5, le=120)
     max_pages_per_minute: int = Field(default=300, ge=1, le=1000)
@@ -320,9 +323,10 @@ class SandboxConfig(StrictModel):
 
 class NotificationConfig(StrictModel):
     target: str | None = None
+    prediction_target: str | None = Field(default=None, min_length=1)
     display_timezone: Literal["Asia/Shanghai"] = "Asia/Shanghai"
     daily_summary_max_chars: Literal[600] = 600
-    send_timeout_seconds: Literal[10] = 10
+    send_timeout_seconds: int = Field(default=30, ge=10, le=60)
     attempts: Literal[5] = 5
     retry_seconds: tuple[int, ...] = (60, 300, 900, 900)
     claim_lease_seconds: Literal[120] = 120
@@ -348,6 +352,11 @@ class AppConfig(StrictModel):
             raise ValueError("收益实验依赖已确定的模拟合约规则")
         if self.paper.enabled and self.paper.settlement_asset != self.market.settlement_asset:
             raise ValueError("模拟账户与行情合约结算资产不一致")
+        if self.notification.prediction_target is not None and (
+            not self.hermes.trading_telegram_enabled
+            or self.hermes.trading_profile == self.hermes.controller_profile
+        ):
+            raise ValueError("预测通知须使用已启用TG的独立预测Profile")
         return self
 
     @property

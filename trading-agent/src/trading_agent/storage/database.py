@@ -46,7 +46,7 @@ class Database:
                 )
             except sa.exc.DBAPIError as exc:
                 raise DomainError("MIGRATION_REQUIRED", "数据库尚未完成迁移", 503) from exc
-            if version != "0011_trade_minutes":
+            if version != "0012_trade_checkpoints":
                 raise DomainError("MIGRATION_REQUIRED", "数据库迁移版本与代码不一致", 503)
 
     async def close(self):
